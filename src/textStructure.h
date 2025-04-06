@@ -22,9 +22,9 @@ typedef struct {
 Sequence Empty(); /* Create an empty sequence (i.e. for new empty file)*/
 Sequence NewSequence( char *file_name ); /* i.e. open a file */
 ReturnCode SaveSequence( char *file_name, Sequence *sequence );
-ReturnCode Close( Sequence *sequence, _Bool forceFlag ); /* Free all resources of specified sequence, forceFLag: 1 -> Close even if not saved, 0 -> Close only when saved */
+ReturnCode Close( Sequence *sequence, _Bool forceFlag ); /* Free all resources of specified sequence, forceFlag: 1 -> Close even if not saved, 0 -> Close only when saved */
 
-Size ItemAt( Sequence *sequence, Position position, Item **returnedItem ); /* Try to retrieve one Item at specific position. May return size -1 if invalid. Sicne we are implementing UTF-8, size may be 1 to 4 (1-4 bytes) total.*/
+Size ItemAt( Sequence *sequence, Position position, Item **returnedItem ); /* Try to retrieve one Item at specific position. May return size -1 if invalid. Since we are implementing UTF-8, size may be 1 trough 4 (1-4 bytes) in total.*/
 Size ItemAtBlock( Sequence *sequence, Position position, Item **returnedItemBlock); /* More efficient when retrieving multiple consecutive Items , if multiple Items are already stored in a consecutive block. Size == last index + 1 (of return Block) or -1 to indicate error.*/
 
 ReturnCode Insert( Sequence *sequence, Position position, Sequence sequenceToInsert ); /*(TODO : may reconsider how to pass the sequence to be inserted.) */
