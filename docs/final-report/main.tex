@@ -1,0 +1,131 @@
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+
+\usepackage{geometry}
+ \geometry{
+     a4paper,
+     left=25mm,
+     top=25mm,
+     right=25mm,
+     bottom=30mm
+ }
+
+%% for colors
+\usepackage{xcolor} % must be loaded erly
+%% Define vour custom colors
+\definecolor{myblue}{HTML}{648FFF}
+\definecolor{mypurple}{HTML}{775EF0}
+\definecolor{myred}{HTML}{DD2680}
+\definecolor{myorange}{HTML}{FE6100}
+\definecolor{myyellow}{HTML}{FFB001}
+% Create a new command for the colors
+\newcommand{\blue}[1]{\textcolor{myblue}{#1}}
+\newcommand{\purple}[1]{\textcolor{mypurple}{#1}}
+\newcommand{\red}[1]{\textcolor{myred}{#1}}
+\newcommand{\orange}[1]{\textcolor{myorange}{#1}}
+\newcommand{\yellow}[1]{\textcolor{myyellow}{#1}}
+ 
+%% for tables
+% for dashed and dotted lines
+\usepackage{tabularray}
+\usepackage{booktabs} % For better hlines in tables
+% used to add notes to figures and table with fnote command
+\newcommand\fnote[1]{\captionsetup{font=small}\caption*{#1}}
+% for tables with cells spanning several rows
+\usepackage{multirow}
+\usepackage{makecell}
+
+%% for grafics and figures
+\usepackage{graphicx}
+\usepackage{svg}  % to use .svg
+\usepackage{tikz}
+
+%% for flexible list items
+\usepackage{enumitem}
+
+%% math 
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{mathtools} 
+\usepackage{verbatim} 
+
+%% format of captions and footnotes
+\usepackage[font=small,labelfont=bf]{caption}
+% flushing left of footnotes
+\usepackage[hang,flushmargin]{footmisc}
+
+%% links and urls
+\usepackage[hidelinks]{hyperref}
+\hypersetup{
+    colorlinks=false,
+    linkcolor=black,
+    filecolor=magenta,      
+    urlcolor=blue,
+    citecolor=blue,
+}
+\urlstyle{same}
+
+%% clever referencing and citing rule
+\usepackage{cleveref}
+\usepackage[sort, numbers]{natbib}
+\usepackage{appendix}
+
+%% new setting for \paragraph
+\newcommand{\myparagraph}[1]{\paragraph{#1}\mbox{}\\}
+
+%% format of inline code
+\definecolor{codeColor}{gray}{0.85}
+\usepackage{tcolorbox}
+\newtcbox{\ilc}{on line, boxrule=0pt, boxsep=0pt, bottom = 0pt, left=0pt, right =0pt, top = 0pt, arc = 0pt, colback=white, colframe = white, fontupper={\small \ttfamily}}
+
+%% for code snippets
+\usepackage{listings}
+
+\title{Title}
+
+\author{\\ \\
+Project Report\\
+Operating Systems Lecture Spring Semester 20XX \\ \\ \\ \\
+University of Basel \\
+Faculty of Science \\
+Department of Mathematics and Computer Science \\ \\ \\ \\
+FirstName1 LastName1 \\ 
+FirstName2 LastName2 \\ \\ \\ \\}
+\date{Month DD, 20XX \vfill \includegraphics{resources/logo.jpg}}
+
+\begin{document}
+    \maketitle
+    \thispagestyle{empty}
+
+    \clearpage
+    \pagestyle{empty}
+    \tableofcontents
+    \clearpage    
+    \pagestyle{plain}
+    \setcounter{page}{1} % Start from page 1
+    
+    %% Here you add additional files for additional sections
+    \input{sections/intro}
+
+    %% References, add them to references.bib
+    \bibliographystyle{ieeetr}
+    \bibliography{references}
+    \addcontentsline{toc}{section}{References}
+
+    \clearpage
+    \appendix
+     % Redefine the section command for appendices to include the appendix label and number in the title
+    \let\oldsection\section
+    \renewcommand{\section}[1]{
+      % Increment the chapter counter right away
+      \refstepcounter{section}
+      % Manually format the chapter title to include the appendix label on a separate line and potentially in a smaller font
+      % Adjust this line to match your template's specific styling needs
+      \oldsection*{{\appendixname\ \thesection}: #1}
+      % Add the custom TOC entry with the correctly incremented chapter number
+      \addcontentsline{toc}{section}{\appendixname\ \thesection: #1}
+    }
+    \input{./back/appA}
+    \input{./back/integrity}
+
+\end{document}

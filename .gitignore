@@ -1,6 +1,13 @@
 # Prerequisites
 *.d
 
+#TeXworks live (LaTeX)
+*.toc
+*.out
+*.log
+*.aux
+*.synctex.gz
+
 # Object files
 *.o
 *.ko

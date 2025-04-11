@@ -1,0 +1,38 @@
+\section{Introduction}\label{sec:intro}
+
+Use \verb|\cite{}| to cite or reference online sources as in \cite{h5py}, articles like \cite{Dalcin2021}, or articles in proceedings \cite{Alsaadi2021} as defined in references.bib.
+
+\subsection{Subsection Figures} %% t=top, b=bottom, h=here
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=1.0\linewidth]{figures/terminal.png}
+    \caption{Caption for Figure below the Figure}
+    \label{fig:example}            
+\end{figure}
+
+\subsection{Subsection Tables}
+Fancy table:
+
+\begin{table*}[h] %% t=top, b=bottom, h=here
+    \centering
+    \caption{Caption of Tables above the Table}
+    \label{tab:tab}
+    \begin{tblr}{width=1\textwidth, colspec={Q[l,m,wd=30mm]|Q[c,m,wd=50mm]|Q[r,m,wd=50mm]},stretch=1.2} 
+        Col1 & Col2 & Col3 \\ 
+        \hline\hline
+% Applications -----------------------------                      
+        \SetCell[r=2]{m} 2 row entry & 
+        \SetCell[r=1]{m} \makecell[c]{\blue{1 row entry in color}} &
+        \makecell[r]{Multirow: 10, 20, 50, 100\\
+        1, 2, 4, 8}  \\  
+        \cline[dashed]{2-3}
+         & \SetCell[r=1]{m} \makecell[c]{\red{1 row entry another color}} &
+        \makecell[r]{Multirow:  10'000\\
+        2, 4, 8} \\     
+        \hline    
+% -----------------------------         
+        Single Row Left & Center & 
+        Right \\  
+        \hline\hline
+    \end{tblr}
+\end{table*} 
