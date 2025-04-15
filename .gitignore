@@ -1,6 +1,9 @@
 # Prerequisites
 *.d
 
+#IDE
+.vscode/*
+
 #TeXworks live (LaTeX)
 *.toc
 *.out

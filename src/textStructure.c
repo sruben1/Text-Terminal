@@ -2,7 +2,7 @@
 #include "textStructure.h"  
 
 /*------ Variables for internal use ------*/
-static LineBstd _currLineB = NONE;
+static LineBstd _currLineB = NO_INIT;
 static LineBidentifier _currLineBidentifier = NONE_ID;
 static char currentFile[] =  {'\0'};
 static bool currentlySaved = true;

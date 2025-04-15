@@ -15,7 +15,7 @@ typedef int Position; /* a position in the sequence */
 typedef int Size; /* a length mesurment (size == last index +1, if first index == 0) */
 typedef uint8_t Atomic;/* 1 bytes (warning: is smaller then the atomic size of some utf-8 character (since up to 4 bytes for 1 utf-8 char)) */
 typedef void *Item; 
-typedef enum { LINUX, MSDOS, MAC, NONE} LineBstd;
+typedef enum { LINUX, MSDOS, MAC, NO_INIT} LineBstd;
 typedef enum { LINUX_MSDOS_ID='\n', MAC_ID='\r', NONE_ID='\0'} LineBidentifier;
 
 /*
@@ -23,7 +23,7 @@ typedef enum { LINUX_MSDOS_ID='\n', MAC_ID='\r', NONE_ID='\0'} LineBidentifier;
   Main Text-Sequence
 =========================
 */
-/*---- liked list for piece table ----*/
+/*---- linked list for piece table ----*/
 struct DescriptorNode{
     struct DescriptorNode *next_ptr;
     bool isInFileBuffer;
@@ -58,7 +58,7 @@ LineBidentifier getCurrentLineBidentifier(); /* returns '\n' for Linux & MSDOS o
   Quit
 =========================
 */
-ReturnCode SaveSequence( char *file_name, Sequence *sequence );
+ReturnCode SaveSequence( char *file_path, Sequence *sequence );
 ReturnCode Close( Sequence *sequence, bool forceFlag ); /* Free all resources of specified sequence, forceFlag: 1 -> Close even if not saved, 0 -> Close only when saved */
 
 /*
