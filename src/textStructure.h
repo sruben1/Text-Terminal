@@ -66,8 +66,7 @@ ReturnCode Close( Sequence *sequence, bool forceFlag ); /* Free all resources of
   Read
 =========================
 */
-//**Depreciated** Size ItemAt( Sequence *sequence, Position position, Item **returnedItem ); /* Try to retrieve one Item at specific position. May return size -1 if invalid. Since we are implementing UTF-8, size may be 1 trough 4 (1-4 bytes) in total.*/
-Size getItemBlock( Sequence *sequence, Position position, Item **returnedItemBlock); /* More efficient when retrieving multiple consecutive Items , if multiple Items are already stored in a consecutive block. Size == last index + 1 (of return Block) or -1 to indicate error.*/
+Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemBlock); /* More efficient when retrieving multiple consecutive Items , if multiple Items are already stored in a consecutive block. Size == last index + 1 (of return Block) or -1 to indicate error.*/
 
 /*
 =========================
