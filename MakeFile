@@ -1,2 +1,8 @@
 build:
-	gcc -std=c99 -Wall -Wextra -o test1 ./src/main.c ./src/textStructure.c
+	gcc -std=c99 -Wall -Wextra -o ProjectBuild.out ./src/main.c ./src/textStructure.c -lncurses
+
+buildDebug:
+	gcc -std=c99 -Wall -Wextra -DDEBUG -o DebugBuild.out ./src/main.c ./src/textStructure.c -lncurses
+
+syntaxCheck:
+	gcc -std=c99 -Wall -Wextra -fsyntax-only ./src/main.c ./src/textStructure.c -lncurses
