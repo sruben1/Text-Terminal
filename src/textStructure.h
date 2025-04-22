@@ -4,6 +4,7 @@
 #include <stdint.h>  // For fixed size integer types
 #include <stdlib.h> // malloc() etc.
 #include <stdbool.h> //Easy boolean support
+#include <wchar.h> // wide character support for utf-8
  /*
  * Main piece table data structure of the text editor. 
  * Some ajacent functionality is also included in this file.
@@ -81,7 +82,7 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
   Write/Edit
 =========================
 */
-ReturnCode Insert( Sequence *sequence, Position position, Sequence sequenceToInsert ); /*(TODO : may reconsider how to pass the sequence to be inserted.) */
+ReturnCode Insert( Sequence *sequence, Position position, wchar_t *textToInsert ); /* textToInsert: nullterminated string of wide chars */
 ReturnCode Delete( Sequence *sequence, Position beginPosition, Position endPosition );
 
 ReturnCode Copy( Sequence *sequence, Position fromBegin, Position fromEnd, Position toPosition );

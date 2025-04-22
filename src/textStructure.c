@@ -1,6 +1,12 @@
 // textStructure.c
 #include "textStructure.h"  
 
+/*------ Data structures for internal use ------*/
+typedef struct {
+  DescriptorNode *node;
+  Position startPosition; // position of the block's first character
+} NodeResult;
+
 /*------ Variables for internal use ------*/
 static LineBstd _currLineB = NO_INIT;
 static LineBidentifier _currLineBidentifier = NONE_ID;
@@ -58,28 +64,16 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
   Size size = -1;
 
   if(sequence != NULL){
-    DescriptorNode* curr = sequence->first;  
-
-    // Find the block that contains the position
-    int i = 0;
-    while(curr != NULL){
-      size = curr->size;
-      i = i + size;
-      if (i > position){
-        break;
+    NodeResult nodeResult = getNodeForPosition(sequence, position);
+    DescriptorNode* node = nodeResult.node;
+    if (node != NULL) {
+      int offset = node->offset + (position - nodeResult.startPosition);
+      if (node->isInFileBuffer){
+        *returnedItemBlock = sequence->fileBuffer.data + offset;
+      } else {
+        *returnedItemBlock = sequence->addBuffer.data + offset;
       }
-      curr = curr->next_ptr;
-    } 
-
-    // Return a pointer to the block
-    if (curr != NULL){
-      if (curr->isInFileBuffer){
-        *returnedItemBlock = sequence->fileBuffer.data + curr->offset + (position - i);
-      } 
-      else{
-        *returnedItemBlock = sequence->addBuffer.data + curr->offset + (position - i);
-      }
-      return curr->size;
+      return node->size - offset;
     }
   }
 
@@ -87,7 +81,32 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
   */
 }
 
+/* Helper function for traversing the piece table to find the node containing text a given position */
+NodeResult getNodeForPosition(Sequence *sequence, Position position){
+  NodeResult result = {NULL, -1};
 
+  if (sequence == NULL || position < 0){
+    return result; // Error 
+  }
+
+  DescriptorNode* curr = sequence->pieceTable.first;
+  int i = 0;
+  while(curr != NULL){
+    i += curr->size;
+    if (i > position){
+      result.node = curr;
+      result.startPosition = i - curr->size;
+      break;
+    }
+    curr = curr->next_ptr;
+  }
+
+  return result;
+}
+
+ReturnCode Insert( Sequence *sequence, Position position, wchar_t *textToInsert ){
+  return -1;
+}
 
 ReturnCode Close( Sequence *sequence, bool forceFlag ){
   if(currentlySaved == false){
