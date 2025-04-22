@@ -81,7 +81,7 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
   */
 }
 
-/* Helper function for traversing the piece table to find the node containing text a given position */
+/* Helper function for traversing the piece table to find the node containing text at a given position */
 NodeResult getNodeForPosition(Sequence *sequence, Position position){
   NodeResult result = {NULL, -1};
 
@@ -105,6 +105,66 @@ NodeResult getNodeForPosition(Sequence *sequence, Position position){
 }
 
 ReturnCode Insert( Sequence *sequence, Position position, wchar_t *textToInsert ){
+  if (sequence == NULL || textToInsert == NULL){
+    return -1; // Error
+  }
+
+  // If the sequence is empty, handle first insertion separately
+  if (sequence->pieceTable.length == 0 && position == 0){
+    if (writeToAddBuffer(sequence, textToInsert) == -1){
+      return -1; // Error: Failed to write to buffer
+    }
+    DescriptorNode* firstNode = (DescriptorNode*) malloc(sizeof(DescriptorNode));
+    firstNode->isInFileBuffer = false;
+    firstNode->offset = 0;
+    firstNode->size = wcslen(textToInsert);
+    firstNode->next_ptr = NULL;
+
+    sequence->pieceTable.first = firstNode;
+    sequence->pieceTable.length = 1;
+
+    return 1;
+  }
+
+  NodeResult nodeResult = getNodeForPosition(sequence, position);
+  DescriptorNode* firstNode = nodeResult.node;
+  if (firstNode == NULL){
+    return -1; // Error: Position out of bounds
+  }
+
+  // TODO: Maybe handle edge cases (e.g. inserting at the end) if necessary
+  int distanceInBlock = position - nodeResult.startPosition;
+  if (writeToAddBuffer(sequence, textToInsert) == -1){
+    return -1; // Error: Failed to write to buffer
+  }
+
+  // First node points to the preceding text
+  firstNode->size = distanceInBlock;
+
+  // Second node points to the inserted text
+  DescriptorNode* secondNode = (DescriptorNode*) malloc(sizeof(DescriptorNode));
+  secondNode->isInFileBuffer = false;
+  secondNode->size = wcslen(textToInsert);
+  secondNode->offset = sequence->addBuffer.size - secondNode->size;
+
+  // Third node points to the subsequent text
+  DescriptorNode* thirdNode = (DescriptorNode*) malloc(sizeof(DescriptorNode));
+  thirdNode->isInFileBuffer = firstNode->isInFileBuffer;
+  thirdNode->offset = firstNode->offset + distanceInBlock;
+  thirdNode->size = firstNode->size - distanceInBlock;
+
+  // Update the piece table
+  thirdNode->next_ptr = firstNode->next_ptr;
+  secondNode->next_ptr = thirdNode;
+  firstNode->next_ptr = secondNode;
+  sequence->pieceTable.length += 2;
+
+  return 1;
+}
+
+/* Appends the textToInsert to the add buffer */
+ReturnCode writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert){
+  // TODO: Implement
   return -1;
 }
 
