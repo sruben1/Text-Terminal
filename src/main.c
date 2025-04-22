@@ -2,6 +2,7 @@
 #include <stdio.h> // Standard I/O
 #include <locale.h> // To specify that the utf-8 standard is used 
 #include <wchar.h> // UTF-8, wide char hnadling
+#include <string.h> // Utilities used for wide char strings
 #include <stdbool.h> //Easy boolean support
 #include "textStructure.h"
 
@@ -27,21 +28,54 @@ ReturnCode open_and_setup_file(char* file_path){
 
 /*======== W-CHAR utilities ========*/
 
+/*Function that returns a wChar string with L'\0' terminator. 
+>> sizeToPass == last parsed index of itemArray+1; 
+>> precomputedWCharCount == nbr of wChars without the here added null terminator*/
 wchar_t* utf8_to_wchar(const Atomic* itemArray, int sizeToParse, int precomputedWCharCount){
-
-    //TEMPORARY:
-    return (wchar_t*) malloc(32);
-
-
-
     if(precomputedWCharCount == 0){
         /* Might add extra calculation alogrithm here if needed.*/
+        ERR_PRINT("Compute utf-8 char count not implemented!! Please pass precalculated value with function call.");
+        return NULL;
+    }   
+
+    wchar_t* wStrToReturn = malloc((precomputedWCharCount + 1) * sizeof(wchar_t));
+
+    if (!wStrToReturn){
+        ERR_PRINT("Failed to allocate memory for Wstr!");
+        return NULL;
     }
-    for(int i = 1; i< sizeToParse; i++){
-        //First 2 cases: ASCII (msb==0); or [msb's == 110; or 1110; or 11110]
+
+    //Init a state to reflect an empty (NULL bytes) sequence.
+    mbstate_t state;
+    memset(&state, 0, sizeof(state));
+
+    size_t atomicIndx = 0;
+    size_t destIndx = 0;
+    
+    while((atomicIndx < sizeToParse) && (destIndx < precomputedWCharCount)){
+        size_t lenOfCurrentParse = mbrtowc(&wStrToReturn[destIndx], (const char*) &itemArray[atomicIndx], sizeToParse - atomicIndx, &state);
+        if(lenOfCurrentParse == (size_t) -1){
+            ERR_PRINT("Encountered invalid utf-8 char while converting!");
+            wStrToReturn[destIndx] = L'\uFFFD'; //Insert unkonwn character instead.
+            destIndx+=1;
+            atomicIndx+=1;
+        } else if(lenOfCurrentParse <= (size_t)-2) {
+            ERR_PRINT("Encountered incomplete or corrupt utf-8 char while converting! stopping parsing now.");
+            break;
+        } else {
+            //Increment to next utf-8 byte (sequence) start:
+            destIndx+=1;
+            atomicIndx += lenOfCurrentParse;
+        }
     }
-    // TODO : preallcoate wchar_t* memory for size given with precomputedWCharCount.
-    // fill and return wchar (rememeber correct null termination).
+    //Finalize parse
+    if ((destIndx < precomputedWCharCount)){
+        ERR_PRINT("Parser did not reach expected nbr of UTF-8 chars: Atomics index %d ; UTF-8 chars index: %d ",(int) atomicIndx,(int) destIndx);
+        wStrToReturn[destIndx] = L'\0';
+    } else{
+        wStrToReturn[precomputedWCharCount] = L'\0';
+    }
+    return wStrToReturn;
 }
 
 /* Prints at most the requested nuber of following lines including the utf-8 char at "firstAtomic". Return code 1: single block accessed; code 2: multiple blocks accessed */
@@ -83,16 +117,17 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                 nbrOfUtf8Chars++; // adds +1, if current atomic not == 10xxxxxx (see utf-8 specs);
             }
             if((currentItemBlock[currentSectionStart + offsetCounter] == currentLineBidentifier) || ((currentSectionStart+ offsetCounter) == size-1)){
-                DEBG_PRINT("found a line (or at the end)! current line count = %d \n", (currLineBcount +1));
-                DEBG_PRINT("Nuber of UTF-8 chars in this line = %d \n",  nbrOfUtf8Chars);
+                DEBG_PRINT("found a line (or at the end of block)! current line count = %d \n", (currLineBcount +1));
+                DEBG_PRINT("Nuber of UTF-8 chars in this line/end of block = %d \n",  nbrOfUtf8Chars);
                 if( ((currentLineBreakStd == MSDOS) && ((currentSectionStart + offsetCounter) > 0) && (currentItemBlock[currentSectionStart + offsetCounter-1] != '\r'))){ // Might remove if it causes issues, MSDOS should also work if only check for '\n' characters ('\r' then simply not evaluated).
                     /* Error case, lonely '\n' found despite '\r\n' current standard !*/
                     ERR_PRINT("Error case, lonely '\n' found despite \"\r\n\" current standard !\n");
                 }
                 wchar_t* lineToPrint = utf8_to_wchar(&currentItemBlock[currentSectionStart], offsetCounter, nbrOfUtf8Chars);
+
                 /* 
                 TODO :
-                print out line interpreted as UTF-8 sequence here using : "lineToPrint" and mvaddwstr()?
+                print out line or (may be a line start till end of the block/file), interpreted as UTF-8 sequence here using : "lineToPrint" and mvaddwstr()?
                 
                 */
 
@@ -102,13 +137,14 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                 DEBG_PRINT("section start = %d, Offset = %d \n", currentSectionStart, offsetCounter);
                 char* textContent = (char*)currentItemBlock;
                 DEBG_PRINT("~~~~~~~~~~~~~~~~~~\n");
+                /*
                 for (int i = currentSectionStart; i <= currentSectionStart + offsetCounter; i++) {
                     if(textContent[i] == currentLineBidentifier){
                         printf("[\\n]");
                     } else{
                         putchar(textContent[i]);
                     }
-                }
+                }*/
                 DEBG_PRINT("\n~~~~~~~~~~~~~~~~~~\n");
                 for (int i = currentSectionStart; i <= currentSectionStart + offsetCounter; i++) {
                     printf("| %02x |", (uint8_t) textContent[i]);
@@ -119,7 +155,14 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
 
                 /* reset/setup for next line iteration: */
                 free(lineToPrint);
-                currLineBcount++;
+                if ((currentSectionStart+ offsetCounter) != size-1){
+                    currLineBcount++;
+                    /*
+                      >>> TODO: take in line stats (from variables) here
+
+
+                    */
+                };
                 currentSectionStart = currentSectionStart + offsetCounter + 1;
                 offsetCounter = -1;
                 nbrOfUtf8Chars = 0;
