@@ -18,7 +18,7 @@ typedef struct{
 
 /* Buffer for storing text */
 typedef struct{
-  Atomic *buffer;
+  Atomic *data;
   unsigned long size;
 } Buffer;
 
@@ -40,6 +40,10 @@ Sequence* Empty(LineBstd LineBstdToUse){
   Sequence *newSeq = (Sequence*) malloc(sizeof(Sequence));
   newSeq->pieceTable.first = NULL;
   newSeq->pieceTable.length = 0;
+  newSeq->fileBuffer.data = NULL;
+  newSeq->fileBuffer.size = 0;
+  newSeq->addBuffer.data = NULL;
+  newSeq->addBuffer.size = 0;
   return newSeq;
 }
 
@@ -78,16 +82,33 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
     return -1;
   }
   
-  /* TODO : continue implementation
+  /* TODO : prevent splitting inbetween a utf-8 char
   Size size = -1;
 
   if(sequence != NULL){
     DescriptorNode* curr = sequence->first;  
+
+    // Find the block that contains the position
     int i = 0;
     while(curr != NULL){
       size = curr->size;
       i = i + size;
+      if (i > position){
+        break;
+      }
+      curr = curr->next_ptr;
     } 
+
+    // Return a pointer to the block
+    if (curr != NULL){
+      if (curr->isInFileBuffer){
+        *returnedItemBlock = sequence->fileBuffer.data + curr->offset + (position - i);
+      } 
+      else{
+        *returnedItemBlock = sequence->addBuffer.data + curr->offset + (position - i);
+      }
+      return curr->size;
+    }
   }
 
   return size;

@@ -31,7 +31,7 @@ typedef struct Sequence;
 =========================
 */
 Sequence* Empty(LineBstd LineBstdToUse); /* Create an empty sequence (i.e. for new empty file)*/
-Sequence NewSequence( char *file_name ); /* i.e. open a file */
+Sequence* NewSequence( char *file_name ); /* i.e. open a file */
 LineBstd getCurrentLineBstd(); 
 LineBidentifier getCurrentLineBidentifier(); /* returns '\n' for Linux & MSDOS or '\r' for MAC */
 
