@@ -1,6 +1,34 @@
 // textStructure.c
 #include "textStructure.h"  
 
+/*------ Internal data structures ------*/
+/* Linked list node */
+typedef struct{
+  DescriptorNode *next_ptr;
+  bool isInFileBuffer;
+  unsigned long offset;
+  unsigned long size;
+} DescriptorNode;
+
+/* Piece table as a linked list */
+typedef struct{
+  DescriptorNode *first;
+  int length;
+} PieceTable;
+
+/* Buffer for storing text */
+typedef struct{
+  Atomic *buffer;
+  unsigned long size;
+} Buffer;
+
+/* Combined data structure */
+typedef struct {
+  PieceTable pieceTable;
+  Buffer fileBuffer;
+  Buffer addBuffer;
+} Sequence;
+
 /*------ Variables for internal use ------*/
 static LineBstd _currLineB = NO_INIT;
 static LineBidentifier _currLineBidentifier = NONE_ID;
@@ -70,9 +98,9 @@ ReturnCode Close( Sequence *sequence, bool forceFlag ){
   if(currentlySaved == false){
     return -1;
   } else if(sequence != NULL){
-    struct DescriptorNode* curr = sequence->pieceTable.first;
+    DescriptorNode* curr = sequence->pieceTable.first;
     while(curr != NULL){
-      struct DescriptorNode* next = curr->next_ptr;
+      DescriptorNode* next = curr->next_ptr;
       free(curr);
       curr = next;
     }

@@ -23,25 +23,7 @@ typedef enum { LINUX_MSDOS_ID='\n', MAC_ID='\r', NONE_ID='\0'} LineBidentifier;
   Main Text-Sequence
 =========================
 */
-/*---- linked list for piece table ----*/
-struct DescriptorNode{
-    struct DescriptorNode *next_ptr;
-    bool isInFileBuffer;
-    unsigned long offset;
-    unsigned long size;
-};
-
-struct PieceTable{
-    struct DescriptorNode *first;
-    int length;
-};
-
-/*---- Combined Data Structure ----*/
-typedef struct {
-    struct PieceTable pieceTable;
-    /*File buffer*/
-    /*Changes buffer*/
-} Sequence;
+typedef struct Sequence;
 
 /*
 =========================
