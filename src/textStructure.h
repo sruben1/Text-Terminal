@@ -11,6 +11,8 @@
  * Some of the fundamental principles were developped with regars to: https://www.cs.unm.edu/~crowley/papers/sds/sds.html
  */
 
+ #define END_OF_TEXT_CHAR 0x03
+
 typedef int ReturnCode; /* 1: success; negative: failure; 0: undefined*/
 typedef int Position; /* a position in the sequence */
 typedef int Size; /* a length mesurment (size == last index +1, if first index == 0) */

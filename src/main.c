@@ -96,6 +96,11 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
     bool requestNextBlock = false;
     int size = -1;
 
+    //In order to ensure porting line variables for if split over multiple blocks:
+    int atomicsInLine = 0; // not an index! (+1 generaly) 
+    int nbrOfUtf8CharsInLine = 0;
+    int nbrOfUtf8CharsNoControlCharsInLine = 0; // If we want to ignore line breaks.
+
     while( currLineBcount < nbrOfLines ){
         DEBG_PRINT("[Trace] : in main while loop, %p %d %d \n", activeSequence, currentLineBreakStd, currentLineBidentifier);
         Atomic* currentItemBlock = NULL;
@@ -118,26 +123,34 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
         int currentSectionStart = 0; //i.e. offset of nbr of Items form pointer start
         int offsetCounter = 0; //i.e. RUNNING offset of nbr of Items form currentSectionStart
         int nbrOfUtf8Chars = 0;
+        int nbrOfUtf8CharsNoControlChars = 0; // If we want to ignore line breaks.
 
         while((currLineBcount < nbrOfLines) && !requestNextBlock){
             DEBG_PRINT("handling atomic at index: %d, is : '%c' \n", (firstAtomic + currentSectionStart + offsetCounter), currentItemBlock[currentSectionStart + offsetCounter]);
 
             //TODO : might add seccond variable having ignore cases for \n ,\r, etc. :
             if( (currentItemBlock[currentSectionStart + offsetCounter] & 0xC0) != 0x80 ){
-                nbrOfUtf8Chars++; // adds +1, if current atomic not == 10xxxxxx (see utf-8 specs);
+                // adds +1, if current atomic not == 10xxxxxx (see utf-8 specs):
+                nbrOfUtf8Chars++; 
+
+                if(currentItemBlock[currentSectionStart + offsetCounter] >= 0x20){
+                    // Increase if not an (ASCII) control character:
+                    nbrOfUtf8CharsNoControlChars++; 
+                } 
             }
             if((currentItemBlock[currentSectionStart + offsetCounter] == currentLineBidentifier) || ((currentSectionStart+ offsetCounter) == size-1)){
                 DEBG_PRINT("found a line (or at the end of block)! current line count = %d \n", (currLineBcount +1));
                 DEBG_PRINT("Nuber of UTF-8 chars in this line/end of block = %d \n",  nbrOfUtf8Chars);
+                //Decrease, since current char is a line break char:
                 if( ((currentLineBreakStd == MSDOS) && ((currentSectionStart + offsetCounter) > 0) && (currentItemBlock[currentSectionStart + offsetCounter-1] != '\r'))){ // Might remove if it causes issues, MSDOS should also work if only check for '\n' characters ('\r' then simply not evaluated).
                     /* Error case, lonely '\n' found despite '\r\n' current standard !*/
-                    ERR_PRINT("Error case, lonely '\n' found despite \"\r\n\" current standard !\n");
+                    ERR_PRINT("Warning case, lonely '\n' found despite \"\r\n\" current standard !\n");
                 }
                 wchar_t* lineToPrint = utf8_to_wchar(&currentItemBlock[currentSectionStart], offsetCounter+1, nbrOfUtf8Chars);
 
                 /* 
                 TODO :
-                print out line or (may be a line start till end of the block/file), interpreted as UTF-8 sequence here using : "lineToPrint" and mvaddwstr()?
+                print out line or block (could be either!!), interpreted as UTF-8 sequence here using : "lineToPrint" and mvaddwstr()?
                 
                 */
 
@@ -162,19 +175,37 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                 #endif
 
 
-                /* reset/setup for next line iteration: */
+                /* reset/setup for next block/line iteration: */
                 free(lineToPrint);
-                if ((currentSectionStart+ offsetCounter) != size-1){
-                    currLineBcount++;
+                if ((currentItemBlock[currentSectionStart + offsetCounter] == currentLineBidentifier) || (currentItemBlock[currentSectionStart + offsetCounter] == END_OF_TEXT_CHAR)){
+                    // handle this blocks line stats:
+                    atomicsInLine += offsetCounter+1;
+                    nbrOfUtf8CharsInLine += nbrOfUtf8Chars;
+                    nbrOfUtf8CharsNoControlCharsInLine += nbrOfUtf8CharsNoControlChars;
                     /*
                       >>> TODO: take in line stats (from variables) here
-
-
                     */
-                };
+                   
+                    ++currLineBcount; // Includues the current line; please ensure to keep the incrementation by 1 here...
+                    nbrOfUtf8CharsNoControlCharsInLine; // Use this if should not count any '\n' '\r' ... chars
+                    nbrOfUtf8CharsInLine;
+
+                    DEBG_PRINT("atomicsInLine: %d, nbrOfUtf8CharsInLine: %d, nbrOfUtf8CharsNoControlCharsInLine: %d\n", atomicsInLine, nbrOfUtf8CharsInLine, nbrOfUtf8CharsNoControlCharsInLine);
+                    // Reset variables for next line:
+                    atomicsInLine = 0;
+                    nbrOfUtf8CharsInLine = 0;
+                    nbrOfUtf8CharsNoControlCharsInLine = 0;
+                } else{
+                    // Ensure port of line statistics to next block handling (iteration):
+                    atomicsInLine += offsetCounter+1;
+                    nbrOfUtf8CharsInLine += nbrOfUtf8Chars;
+                    nbrOfUtf8CharsNoControlCharsInLine += nbrOfUtf8CharsNoControlChars;
+                    DEBG_PRINT("Ported, current state: atomicsInLine: %d, nbrOfUtf8CharsInLine: %d, nbrOfUtf8CharsNoControlCharsInLine: %d\n", atomicsInLine, nbrOfUtf8CharsInLine, nbrOfUtf8CharsNoControlCharsInLine);
+                }
                 currentSectionStart = currentSectionStart + offsetCounter + 1;
                 offsetCounter = -1;
                 nbrOfUtf8Chars = 0;
+                nbrOfUtf8CharsNoControlChars = 0;
             }
             offsetCounter++;
             if((currentSectionStart + offsetCounter >= size)){
