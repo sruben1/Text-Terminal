@@ -8,9 +8,12 @@
 
 // curtesy of: https://stackoverflow.com/questions/1941307/debug-print-macro-in-c/67667132#67667132 ; use "-DDEBUG" flag to activate.
 #ifdef DEBUG
+    #include <signal.h> // Breakpint for debugging
     #define DEBG_PRINT(...) printf(__VA_ARGS__)
+    #define SET_BREAK_POINT raise(SIGTRAP)
 #else
     #define DEBG_PRINT(...) do {} while (0)
+    #define SET_BREAK_POINT
 #endif
 #define ERR_PRINT(...) fprintf(stderr, "[ERROR:] " __VA_ARGS__)
 
@@ -29,7 +32,7 @@ ReturnCode open_and_setup_file(char* file_path){
 /*======== W-CHAR utilities ========*/
 
 /*Function that returns a wChar string with L'\0' terminator. 
->> sizeToPass == last parsed index of itemArray+1; 
+>> sizeToPass == last parsed index of itemArray **+1**; 
 >> precomputedWCharCount == nbr of wChars without the here added null terminator*/
 wchar_t* utf8_to_wchar(const Atomic* itemArray, int sizeToParse, int precomputedWCharCount){
     if(precomputedWCharCount == 0){
@@ -38,6 +41,7 @@ wchar_t* utf8_to_wchar(const Atomic* itemArray, int sizeToParse, int precomputed
         return NULL;
     }   
 
+    DEBG_PRINT("Pre allocating %d wChar positions.", precomputedWCharCount+1);
     wchar_t* wStrToReturn = malloc((precomputedWCharCount + 1) * sizeof(wchar_t));
 
     if (!wStrToReturn){
@@ -52,28 +56,34 @@ wchar_t* utf8_to_wchar(const Atomic* itemArray, int sizeToParse, int precomputed
     size_t atomicIndx = 0;
     size_t destIndx = 0;
     
-    while((atomicIndx < sizeToParse) && (destIndx < precomputedWCharCount)){
-        size_t lenOfCurrentParse = mbrtowc(&wStrToReturn[destIndx], (const char*) &itemArray[atomicIndx], sizeToParse - atomicIndx, &state);
-        if(lenOfCurrentParse == (size_t) -1){
+    DEBG_PRINT("Bool: %d\n", (((int)atomicIndx) < sizeToParse) && (((int)destIndx) < precomputedWCharCount));
+    while((((int)atomicIndx) < sizeToParse) && (((int)destIndx) < precomputedWCharCount)){
+        DEBG_PRINT("Trying to parse\n");
+        size_t lenOfCurrentParse = mbrtowc(&wStrToReturn[(int)destIndx], (const char*) &itemArray[(int)atomicIndx], sizeToParse - atomicIndx, &state);
+        DEBG_PRINT("Got parser size:%d", (int) lenOfCurrentParse);
+        if((int) lenOfCurrentParse == -1){
             ERR_PRINT("Encountered invalid utf-8 char while converting!");
-            wStrToReturn[destIndx] = L'\uFFFD'; //Insert unkonwn character instead.
+            wStrToReturn[destIndx] = L'\uFFFD'; //Insert "unkonwn" character instead.
             destIndx+=1;
             atomicIndx+=1;
-        } else if(lenOfCurrentParse <= (size_t)-2) {
+        } else if((int) lenOfCurrentParse <= -2) {
             ERR_PRINT("Encountered incomplete or corrupt utf-8 char while converting! stopping parsing now.");
             break;
         } else {
             //Increment to next utf-8 byte (sequence) start:
+            DEBG_PRINT("Incrementing atomic postion by: %d\n", (int) lenOfCurrentParse);
             destIndx+=1;
-            atomicIndx += lenOfCurrentParse;
+            atomicIndx += (int)lenOfCurrentParse;
         }
+        DEBG_PRINT("Bool: %d\n", (((int)atomicIndx) < sizeToParse) && (((int)destIndx) < precomputedWCharCount));
+        //SET_BREAK_POINT;
     }
     //Finalize parse
     if ((destIndx < precomputedWCharCount)){
         ERR_PRINT("Parser did not reach expected nbr of UTF-8 chars: Atomics index %d ; UTF-8 chars index: %d ",(int) atomicIndx,(int) destIndx);
-        wStrToReturn[destIndx] = L'\0';
+        wStrToReturn[(int)destIndx] = L'\0';
     } else{
-        wStrToReturn[precomputedWCharCount] = L'\0';
+        wStrToReturn[(int)precomputedWCharCount] = L'\0';
     }
     return wStrToReturn;
 }
@@ -90,15 +100,15 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
         DEBG_PRINT("[Trace] : in main while loop, %p %d %d \n", activeSequence, currentLineBreakStd, currentLineBidentifier);
         Atomic* currentItemBlock = NULL;
         if(requestNextBlock){
-            DEBG_PRINT("[Trace] : Consecutive block requested");
+            DEBG_PRINT("[Trace] : Consecutive block requested\n");
             firstAtomic = firstAtomic + size; // since size == last index +1 no additional +1 needed.
             size = (int) getItemBlock(activeSequence, firstAtomic, &currentItemBlock);
-            DEBG_PRINT("The size value %d", size);
+            DEBG_PRINT("The size value %d\n", size);
             if (size < 0){
                 return 2;
             }
         } else{
-            DEBG_PRINT("[Trace] : First block requested");
+            DEBG_PRINT("[Trace] : First block requested\n");
             size = (int) getItemBlock(activeSequence, firstAtomic, &currentItemBlock);
         }
         
@@ -123,7 +133,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                     /* Error case, lonely '\n' found despite '\r\n' current standard !*/
                     ERR_PRINT("Error case, lonely '\n' found despite \"\r\n\" current standard !\n");
                 }
-                wchar_t* lineToPrint = utf8_to_wchar(&currentItemBlock[currentSectionStart], offsetCounter, nbrOfUtf8Chars);
+                wchar_t* lineToPrint = utf8_to_wchar(&currentItemBlock[currentSectionStart], offsetCounter+1, nbrOfUtf8Chars);
 
                 /* 
                 TODO :
@@ -133,21 +143,20 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
 
 
                 #ifdef DEBUG
-                // TEMPORARY test print:
+                // Basic test print to test backend:
                 DEBG_PRINT("section start = %d, Offset = %d \n", currentSectionStart, offsetCounter);
                 char* textContent = (char*)currentItemBlock;
                 DEBG_PRINT("~~~~~~~~~~~~~~~~~~\n");
-                /*
-                for (int i = currentSectionStart; i <= currentSectionStart + offsetCounter; i++) {
-                    if(textContent[i] == currentLineBidentifier){
-                        printf("[\\n]");
-                    } else{
-                        putchar(textContent[i]);
+                for (size_t i = 0; lineToPrint[i] != L'\0'; i++) {
+                    if(lineToPrint[i] != L'\n'){
+                        putwchar(lineToPrint[i]);
+                    } else {
+                        DEBG_PRINT("[\\n]");
                     }
-                }*/
+                }
                 DEBG_PRINT("\n~~~~~~~~~~~~~~~~~~\n");
                 for (int i = currentSectionStart; i <= currentSectionStart + offsetCounter; i++) {
-                    printf("| %02x |", (uint8_t) textContent[i]);
+                    DEBG_PRINT("| %02x |", (uint8_t) textContent[i]);
                 }
                 DEBG_PRINT("\n~~~~~~~~~~~~~~~~~~\n");
                 #endif
@@ -183,6 +192,6 @@ int main(int argc, char *argv[]){
     DEBG_PRINT("initialized!\n");
     setlocale(LC_ALL, "en_US.UTF-8"); // Set utf-8 as used standard
     open_and_setup_file("TODO");
-    print_items_after(0, 8);
+    print_items_after(0, 2);
     return 0;
 }
