@@ -59,15 +59,16 @@ wchar_t* utf8_to_wchar(const Atomic* itemArray, int sizeToParse, int precomputed
     DEBG_PRINT("Bool: %d\n", (((int)atomicIndx) < sizeToParse) && (((int)destIndx) < precomputedWCharCount));
     while((((int)atomicIndx) < sizeToParse) && (((int)destIndx) < precomputedWCharCount)){
         DEBG_PRINT("Trying to parse\n");
+        DEBG_PRINT("Cunrrent parser byte: %02x\n", (uint8_t) itemArray[(int)atomicIndx]);
         size_t lenOfCurrentParse = mbrtowc(&wStrToReturn[(int)destIndx], (const char*) &itemArray[(int)atomicIndx], sizeToParse - atomicIndx, &state);
-        DEBG_PRINT("Got parser size:%d", (int) lenOfCurrentParse);
+        DEBG_PRINT("Got parser size:%d\n", (int) lenOfCurrentParse);
         if((int) lenOfCurrentParse == -1){
-            ERR_PRINT("Encountered invalid utf-8 char while converting!");
+            ERR_PRINT("Encountered invalid utf-8 char while converting!\n");
             wStrToReturn[destIndx] = L'\uFFFD'; //Insert "unkonwn" character instead.
             destIndx+=1;
             atomicIndx+=1;
         } else if((int) lenOfCurrentParse <= -2) {
-            ERR_PRINT("Encountered incomplete or corrupt utf-8 char while converting! stopping parsing now.");
+            ERR_PRINT("Encountered incomplete or corrupt utf-8 char while converting! stopping parsing now.\n");
             break;
         } else {
             //Increment to next utf-8 byte (sequence) start:
@@ -118,7 +119,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
         }
         
 
-        if(( size < 0 ) || ( currentItemBlock == NULL )){DEBG_PRINT("Main error: size value %d", size); return -1; }//Error!!
+        if(( size < 0 ) || ( currentItemBlock == NULL )){DEBG_PRINT("Main error: size value %d\n", size); return -1; }//Error!!
 
         int currentSectionStart = 0; //i.e. offset of nbr of Items form pointer start
         int offsetCounter = 0; //i.e. RUNNING offset of nbr of Items form currentSectionStart
@@ -221,8 +222,11 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
 /*======== Main implementation ========*/
 int main(int argc, char *argv[]){
     DEBG_PRINT("initialized!\n");
-    setlocale(LC_ALL, "en_US.UTF-8"); // Set utf-8 as used standard
+    if(setlocale(LC_ALL, "en_US.UTF-8") == NULL){ // Set utf-8 as used standard
+        ERR_PRINT("Fatal error: failed to set LOCAL to UTF-8!\n");
+        return 0;
+    } 
     open_and_setup_file("TODO");
-    print_items_after(0, 2);
+    print_items_after(29, 20);
     return 0;
 }
