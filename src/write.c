@@ -34,6 +34,7 @@ int main() {
     keypad(stdscr, TRUE); // enable special keys
     noecho(); // don't echo input
     curs_set(1); // visible cursor
+    clearok(stdscr, TRUE); // force full redraw after resize
 
     // initialize sequence
     Sequence* seq = Empty(LINUX);
@@ -45,10 +46,14 @@ int main() {
 
     int ch;
     while ((ch = getch()) != KEY_F(1)) { // exit with F1
-        if (bufferPos >= BUFFER_SIZE - 4) break; // prevent overflow (-4 = space for 4 bytes)
+        if (ch == KEY_RESIZE){
+            resizeterm(0,0); // tells ncurses to pick up new lines & cols
+        } else{
+            if (bufferPos >= BUFFER_SIZE - 4) break; // prevent overflow (-4 = space for 4 bytes)
         
-        // convert to UTF-8 (simplified for ASCII)
-        inputBuffer[bufferPos++] = (Atomic)ch;
+            // convert to UTF-8 (simplified for ASCII)
+            inputBuffer[bufferPos++] = (Atomic)ch;
+        }
         
         // display input
         clear();
