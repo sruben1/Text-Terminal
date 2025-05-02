@@ -33,7 +33,7 @@ int main() {
     raw(); // line buffering disabled, no need for enter key
     keypad(stdscr, TRUE); // enable special keys
     noecho(); // don't echo input
-    curs_set(1); // visible cursor
+    curs_set(1); // visible blinking cursor
     clearok(stdscr, TRUE); // force full redraw after resize
 
     // initialize sequence
@@ -55,13 +55,53 @@ int main() {
             inputBuffer[bufferPos++] = (Atomic)ch;
         }
         
-        // display input
+        // display interface
         clear();
+
+        for (int i = 0; i < 4; i++) {
+            move(i, 0);
+            clrtoeol();
+        }
+        mvaddstr(0, 0, "F1:Exit | Ctrl+S:Save | Ctrl+O:Open | Ctrl+N:New");
+        mvaddstr(1, 0, "Ctrl+Z:Undo | Ctrl+Y:Redo | Ctrl+F:Find | Ctrl+H:Replace");
+        
+        mvhline(4, 0, '=', COLS);
+
+        /* Main Text Area (below header separator) */
         wchar_t* wstr = utf8_to_wchar(inputBuffer, bufferPos);
         if (wstr) {
-            addwstr(wstr); // dsisplay wide string
+            mvaddwstr(5, 0, wstr); // start at line 5
             free(wstr);
         }
+
+        //statistics
+        int lines = 1, current_line_start = 0;
+        for (int i = 0; i < bufferPos; ++i) {
+            if (inputBuffer[i] == '\n') {
+                lines++;
+                current_line_start = i + 1;
+            }
+        }
+        int current_col = bufferPos - current_line_start;
+        int total_chars = bufferPos;
+
+        /* - 4 lines for statistics */
+        int bottom_start = LINES - 4;
+        // Footer separator 
+        mvhline(bottom_start - 1, 0, '=', COLS);
+        
+        for (int i = 0; i < 4; i++) {
+            move(bottom_start + i, 0);
+            clrtoeol();
+        }
+        mvprintw(bottom_start, 0, "Line: %d | Col: %d | Total Chars: %d", lines, current_col + 1, total_chars);
+        mvprintw(bottom_start + 1, 0, "Encoding: UTF-8 | Mode: Insert");
+
+        /* Cursor Positioning */
+        int cursor_y = 5 + (lines - 1);  
+        int cursor_x = current_col;
+        move(cursor_y, cursor_x);
+
         refresh(); // updates terminal display after change
     }
 
