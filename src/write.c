@@ -55,38 +55,118 @@ int main() {
     int ch;
     MEVENT event;
     while ((ch = getch()) != KEY_F(1)) {
-        if (ch == KEY_MOUSE && getmouse(&event) == OK) {
-            int click_line = event.y - 5;
-            int click_col  = event.x;
-            if (click_line >= 0) {
-                // 1) find byte index of line start
-                int line = 0, idx = 0;
-                for (; idx < bufLen && line < click_line; ++idx) {
-                    if (inputBuffer[idx] == '\n') ++line;
+        switch(ch) {
+            case KEY_UP: {
+                int currentLineStart = 0;
+                for (int i = cursorPos - 1; i >= 0; --i) {
+                    if (inputBuffer[i] == '\n') {
+                        currentLineStart = i + 1;
+                        break;
+                    }
                 }
-                // 2) advance to column (naïve byte-per-col)
-                int col = 0;
-                while (idx < bufLen && col < click_col) {
-                    unsigned char c = (unsigned char)inputBuffer[idx];
-                    int step = 1;  // for true UTF‑8 you could decode wchar and use its width
-                    idx += step;
-                    col += 1;
+                if (currentLineStart == 0) break; // already on first line
+
+                int currentColumn = cursorPos - currentLineStart;
+
+                int prevLineStart = 0;
+                for (int i = currentLineStart - 2; i >= 0; --i) {
+                    if (inputBuffer[i] == '\n') {
+                        prevLineStart = i + 1;
+                        break;
+                    }
                 }
-                // clamp
-                cursorPos = idx;
+
+                int prevLineLength = currentLineStart - prevLineStart - 1;
+                if (prevLineLength < 0) prevLineLength = 0;
+
+                int newColumn = currentColumn > prevLineLength ? prevLineLength : currentColumn;
+                cursorPos = prevLineStart + newColumn;
+                if (cursorPos < 0) cursorPos = 0;
+                break;
             }
-        }
-        else if (ch == KEY_RESIZE) {
-            resizeterm(0, 0);
-        }
-        else if (ch >= 0 && bufLen < BUFFER_SIZE - 4) {
-            // INSERT mode: shift tail right one byte
-            memmove(inputBuffer + cursorPos + 1,
-                    inputBuffer + cursorPos,
-                    bufLen - cursorPos);
-            inputBuffer[cursorPos] = (Atomic)ch;
-            bufLen++;
-            cursorPos++;
+            case KEY_DOWN: {
+                int currentLineStart = 0;
+                for (int i = cursorPos - 1; i >= 0; --i) {
+                    if (inputBuffer[i] == '\n') {
+                        currentLineStart = i + 1;
+                        break;
+                    }
+                }
+                int currentColumn = cursorPos - currentLineStart;
+
+                int nextLineStart = -1;
+                for (int i = currentLineStart; i < bufLen; ++i) {
+                    if (inputBuffer[i] == '\n') {
+                        nextLineStart = i + 1;
+                        break;
+                    }
+                }
+                if (nextLineStart == -1) break; // no next line
+
+                int nextLineEnd = bufLen;
+                for (int i = nextLineStart; i < bufLen; ++i) {
+                    if (inputBuffer[i] == '\n') {
+                        nextLineEnd = i;
+                        break;
+                    }
+                }
+                int nextLineLength = nextLineEnd - nextLineStart;
+
+                int newColumn = currentColumn > nextLineLength ? nextLineLength : currentColumn;
+                cursorPos = nextLineStart + newColumn;
+                if (cursorPos > bufLen) cursorPos = bufLen;
+                break;
+            }
+            case KEY_LEFT:
+                if (cursorPos > 0) cursorPos--;
+                break;
+            case KEY_RIGHT:
+                if (cursorPos < bufLen) cursorPos++;
+                break;
+            case KEY_BACKSPACE:
+                if (cursorPos > 0 && bufLen > 0) {
+                    memmove(inputBuffer + cursorPos - 1, inputBuffer + cursorPos, bufLen - cursorPos);
+                    bufLen--;
+                    cursorPos--;
+                }
+                break;
+            case KEY_MOUSE:
+                if (getmouse(&event) == OK) {
+                    int click_line = event.y - 5;
+                    int click_col  = event.x;
+                    if (click_line >= 0) {
+                        // 1) find byte index of line start
+                        int line = 0, idx = 0;
+                        for (; idx < bufLen && line < click_line; ++idx) {
+                            if (inputBuffer[idx] == '\n') ++line;
+                        }
+                        // 2) advance to column (naïve byte-per-col)
+                        int col = 0;
+                        while (idx < bufLen && col < click_col) {
+                            unsigned char c = (unsigned char)inputBuffer[idx];
+                            int step = 1;  // for true UTF‑8 you could decode wchar and use its width
+                            idx += step;
+                            col += 1;
+                        }
+                        // clamp
+                        cursorPos = idx;
+                    }
+                }
+                break;
+            case KEY_RESIZE:
+                resizeterm(0, 0);
+                break;
+            default:
+                if (ch >= 0 && bufLen < BUFFER_SIZE - 4) {
+                    // INSERT mode: shift tail right one byte
+                    memmove(inputBuffer + cursorPos + 1,
+                            inputBuffer + cursorPos,
+                            bufLen - cursorPos);
+                    inputBuffer[cursorPos] = (Atomic)ch;
+                    bufLen++;
+                    cursorPos++;
+                }
+                break;
         }
 
         /* redraw */
