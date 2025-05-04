@@ -6,7 +6,7 @@
 #include <stdbool.h> //Easy boolean support
 #include "textStructure.h"
 
-// curtesy of: https://stackoverflow.com/questions/1941307/debug-print-macro-in-c/67667132#67667132 ; use "-DDEBUG" flag to activate.
+// curtesy of: https://stackoverflow.com/questions/1941307/debug-print-macro-in-c/67667132#67667132 ; use "-DDEBUG" flag to activate.                 
 #ifdef DEBUG
     #include <signal.h> // Breakpint for debugging
     #define DEBG_PRINT(...) printf(__VA_ARGS__)
@@ -17,7 +17,7 @@
 #endif
 #define ERR_PRINT(...) fprintf(stderr, "[ERROR:] " __VA_ARGS__)
 
-/*======== Text sequence datastrucutre ========*/
+/*======== Text sequence data structure ========*/
 Sequence* activeSequence = {NULL};
 LineBstd currentLineBreakStd = NO_INIT;
 LineBidentifier currentLineBidentifier = NONE_ID;
@@ -36,7 +36,7 @@ ReturnCode open_and_setup_file(char* file_path){
 >> precomputedWCharCount == nbr of wChars without the here added null terminator*/
 wchar_t* utf8_to_wchar(const Atomic* itemArray, int sizeToParse, int precomputedWCharCount){
     if(precomputedWCharCount == 0){
-        /* Might add extra calculation alogrithm here if needed.*/
+        /* Might add extra calculation algorithm here if needed.*/
         ERR_PRINT("Compute utf-8 char count not implemented!! Please pass precalculated value with function call.");
         return NULL;
     }   
@@ -59,12 +59,12 @@ wchar_t* utf8_to_wchar(const Atomic* itemArray, int sizeToParse, int precomputed
     DEBG_PRINT("Bool: %d\n", (((int)atomicIndx) < sizeToParse) && (((int)destIndx) < precomputedWCharCount));
     while((((int)atomicIndx) < sizeToParse) && (((int)destIndx) < precomputedWCharCount)){
         DEBG_PRINT("Trying to parse\n");
-        DEBG_PRINT("Cunrrent parser byte: %02x\n", (uint8_t) itemArray[(int)atomicIndx]);
+        DEBG_PRINT("Current parser byte: %02x\n", (uint8_t) itemArray[(int)atomicIndx]);
         size_t lenOfCurrentParse = mbrtowc(&wStrToReturn[(int)destIndx], (const char*) &itemArray[(int)atomicIndx], sizeToParse - atomicIndx, &state);
         DEBG_PRINT("Got parser size:%d\n", (int) lenOfCurrentParse);
         if((int) lenOfCurrentParse == -1){
             ERR_PRINT("Encountered invalid utf-8 char while converting!\n");
-            wStrToReturn[destIndx] = L'\uFFFD'; //Insert "unkonwn" character instead.
+            wStrToReturn[destIndx] = L'\uFFFD'; //Insert "unknown" character instead.
             destIndx+=1;
             atomicIndx+=1;
         } else if((int) lenOfCurrentParse <= -2) {
@@ -89,7 +89,7 @@ wchar_t* utf8_to_wchar(const Atomic* itemArray, int sizeToParse, int precomputed
     return wStrToReturn;
 }
 
-/* Prints at most the requested nuber of following lines including the utf-8 char at "firstAtomic". Return code 1: single block accessed; code 2: multiple blocks accessed */
+/* Prints at most the requested number of following lines including the utf-8 char at "firstAtomic". Return code 1: single block accessed; code 2: multiple blocks accessed */
 ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
     DEBG_PRINT("[Trace] : in print function\n");
     if ( activeSequence == NULL || currentLineBreakStd == NO_INIT || currentLineBidentifier == NONE_ID ){ return -1; }
@@ -98,7 +98,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
     int size = -1;
 
     //In order to ensure porting line variables for if split over multiple blocks:
-    int atomicsInLine = 0; // not an index! (+1 generaly) 
+    int atomicsInLine = 0; // not an index! (+1 generally) 
     int nbrOfUtf8CharsInLine = 0;
     int nbrOfUtf8CharsNoControlCharsInLine = 0; // If we want to ignore line breaks.
 
@@ -141,7 +141,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
             }
             if((currentItemBlock[currentSectionStart + offsetCounter] == currentLineBidentifier) || ((currentSectionStart+ offsetCounter) == size-1)){
                 DEBG_PRINT("found a line (or at the end of block)! current line count = %d \n", (currLineBcount +1));
-                DEBG_PRINT("Nuber of UTF-8 chars in this line/end of block = %d \n",  nbrOfUtf8Chars);
+                DEBG_PRINT("Number of UTF-8 chars in this line/end of block = %d \n",  nbrOfUtf8Chars);
                 //Decrease, since current char is a line break char:
                 if( ((currentLineBreakStd == MSDOS) && ((currentSectionStart + offsetCounter) > 0) && (currentItemBlock[currentSectionStart + offsetCounter-1] != '\r'))){ // Might remove if it causes issues, MSDOS should also work if only check for '\n' characters ('\r' then simply not evaluated).
                     /* Error case, lonely '\n' found despite '\r\n' current standard !*/
@@ -187,7 +187,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                       >>> TODO: take in line stats (from variables) here
                     */
                    
-                    ++currLineBcount; // Includues the current line; please ensure to keep the incrementation by 1 here...
+                    ++currLineBcount; // Includes the current line; please ensure to keep the increment by 1 here...
                     nbrOfUtf8CharsNoControlCharsInLine; // Use this if should not count any '\n' '\r' ... chars
                     nbrOfUtf8CharsInLine;
 

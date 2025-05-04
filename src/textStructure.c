@@ -60,7 +60,7 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
     return -1;
   }
   
-  /* TODO : prevent splitting inbetween a utf-8 char
+  /* TODO : prevent splitting within a multi byte utf-8 char
   Size size = -1;
 
   if(sequence != NULL){

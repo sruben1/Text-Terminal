@@ -7,15 +7,15 @@
 #include <wchar.h> // wide character support for utf-8
  /*
  * Main piece table data structure of the text editor. 
- * Some ajacent functionality is also included in this file.
- * Some of the fundamental principles were developped with regars to: https://www.cs.unm.edu/~crowley/papers/sds/sds.html
+ * Some adjacent functionality is also included in this file.
+ * Some of the fundamental principles were developed with regards to: https://www.cs.unm.edu/~crowley/papers/sds/sds.html
  */
 
  #define END_OF_TEXT_CHAR 0x03
 
 typedef int ReturnCode; /* 1: success; negative: failure; 0: undefined*/
 typedef int Position; /* a position in the sequence */
-typedef int Size; /* a length mesurment (size == last index +1, if first index == 0) */
+typedef int Size; /* a length measurement (size == last index +1, if first index == 0) */
 typedef uint8_t Atomic;/* 1 bytes (warning: is smaller then the atomic size of some utf-8 character (since up to 4 bytes for 1 utf-8 char)) */
 typedef void *Item; 
 typedef enum { LINUX, MSDOS, MAC, NO_INIT} LineBstd;
