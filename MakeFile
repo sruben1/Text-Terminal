@@ -1,8 +1,8 @@
 build:
-	gcc -std=c99 -Wall -Wextra -o ProjectBuild.out ./src/main.c ./src/textStructure.c -lncurses
+	gcc -std=c99 -Wall -Wextra -o ProjectBuild.out ./src/main.c ./src/textStructure.c ./src/guiUtilities.c -lncurses
 
 buildDebug:
-	gcc -std=c99 -Wall -Wextra -g -DDEBUG -o DebugBuild.out ./src/main.c ./src/textStructure.c -lncurses
+	gcc -std=c99 -Wall -Wextra -g -DDEBUG -o DebugBuild.out ./src/main.c ./src/textStructure.c ./src/guiUtilities.c -lncurses
 
 syntaxCheck:
-	gcc -std=c99 -Wall -Wextra -fsyntax-only ./src/main.c ./src/textStructure.c -lncurses
+	gcc -std=c99 -Wall -Wextra -fsyntax-only ./src/main.c ./src/textStructure.c ./src/guiUtilities.c -lncurses
