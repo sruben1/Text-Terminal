@@ -2,26 +2,24 @@
 #include <stdio.h> // Standard I/O
 #include <locale.h> // To specify that the utf-8 standard is used 
 #include <wchar.h> // UTF-8, wide char hnadling
-#include <string.h> // Utilities used for wide char strings
 #include <stdbool.h> //Easy boolean support
-#include "textStructure.h"
 
-// curtesy of: https://stackoverflow.com/questions/1941307/debug-print-macro-in-c/67667132#67667132 ; use "-DDEBUG" flag to activate.                 
-#ifdef DEBUG
-    #include <signal.h> // Breakpint for debugging
-    #define DEBG_PRINT(...) printf(__VA_ARGS__)
-    #define SET_BREAK_POINT raise(SIGTRAP)
-#else
-    #define DEBG_PRINT(...) do {} while (0)
-    #define SET_BREAK_POINT
-#endif
-#define ERR_PRINT(...) fprintf(stderr, "[ERROR:] " __VA_ARGS__)
+#include "textStructure.h" // Interface to the central text datastructure 
+#include "guiUtilities.h" // Some utility backend used for the GUI
+#include "debugUtil.h" // For easy managmenet of logger and error messages
 
-/*======== Text sequence data structure ========*/
+/*
+=========================
+  Text sequence data structure
+=========================
+*/
+
+/*======== usage variables (of current file) ========*/
 Sequence* activeSequence = {NULL};
 LineBstd currentLineBreakStd = NO_INIT;
 LineBidentifier currentLineBidentifier = NONE_ID;
 
+/*======== operations ========*/
 ReturnCode open_and_setup_file(char* file_path){
     //Open(...); replaces Empty(...)
     activeSequence = Empty(LINUX);
@@ -29,65 +27,12 @@ ReturnCode open_and_setup_file(char* file_path){
     currentLineBidentifier = getCurrentLineBidentifier();
 }
 
-/*======== W-CHAR utilities ========*/
 
-/*Function that returns a wChar string with L'\0' terminator. 
->> sizeToPass == last parsed index of itemArray **+1**; 
->> precomputedWCharCount == nbr of wChars without the here added null terminator*/
-wchar_t* utf8_to_wchar(const Atomic* itemArray, int sizeToParse, int precomputedWCharCount){
-    if(precomputedWCharCount == 0){
-        /* Might add extra calculation algorithm here if needed.*/
-        ERR_PRINT("Compute utf-8 char count not implemented!! Please pass precalculated value with function call.");
-        return NULL;
-    }   
-
-    DEBG_PRINT("Pre allocating %d wChar positions.", precomputedWCharCount+1);
-    wchar_t* wStrToReturn = malloc((precomputedWCharCount + 1) * sizeof(wchar_t));
-
-    if (!wStrToReturn){
-        ERR_PRINT("Failed to allocate memory for Wstr!");
-        return NULL;
-    }
-
-    //Init a state to reflect an empty (NULL bytes) sequence.
-    mbstate_t state;
-    memset(&state, 0, sizeof(state));
-
-    size_t atomicIndx = 0;
-    size_t destIndx = 0;
-    
-    DEBG_PRINT("Bool: %d\n", (((int)atomicIndx) < sizeToParse) && (((int)destIndx) < precomputedWCharCount));
-    while((((int)atomicIndx) < sizeToParse) && (((int)destIndx) < precomputedWCharCount)){
-        DEBG_PRINT("Trying to parse\n");
-        DEBG_PRINT("Current parser byte: %02x\n", (uint8_t) itemArray[(int)atomicIndx]);
-        size_t lenOfCurrentParse = mbrtowc(&wStrToReturn[(int)destIndx], (const char*) &itemArray[(int)atomicIndx], sizeToParse - atomicIndx, &state);
-        DEBG_PRINT("Got parser size:%d\n", (int) lenOfCurrentParse);
-        if((int) lenOfCurrentParse == -1){
-            ERR_PRINT("Encountered invalid utf-8 char while converting!\n");
-            wStrToReturn[destIndx] = L'\uFFFD'; //Insert "unknown" character instead.
-            destIndx+=1;
-            atomicIndx+=1;
-        } else if((int) lenOfCurrentParse <= -2) {
-            ERR_PRINT("Encountered incomplete or corrupt utf-8 char while converting! stopping parsing now.\n");
-            break;
-        } else {
-            //Increment to next utf-8 byte (sequence) start:
-            DEBG_PRINT("Incrementing atomic postion by: %d\n", (int) lenOfCurrentParse);
-            destIndx+=1;
-            atomicIndx += (int)lenOfCurrentParse;
-        }
-        DEBG_PRINT("Bool: %d\n", (((int)atomicIndx) < sizeToParse) && (((int)destIndx) < precomputedWCharCount));
-        //SET_BREAK_POINT;
-    }
-    //Finalize parse
-    if ((destIndx < precomputedWCharCount)){
-        ERR_PRINT("Parser did not reach expected nbr of UTF-8 chars: Atomics index %d ; UTF-8 chars index: %d ",(int) atomicIndx,(int) destIndx);
-        wStrToReturn[(int)destIndx] = L'\0';
-    } else{
-        wStrToReturn[(int)precomputedWCharCount] = L'\0';
-    }
-    return wStrToReturn;
-}
+/*
+=========================
+  GUI
+=========================
+*/
 
 /* Prints at most the requested number of following lines including the utf-8 char at "firstAtomic". Return code 1: single block accessed; code 2: multiple blocks accessed */
 ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
@@ -219,7 +164,11 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
 }
 
 
-/*======== Main implementation ========*/
+/*
+=========================
+  Main implementation
+=========================
+*/
 int main(int argc, char *argv[]){
     DEBG_PRINT("initialized!\n");
     if(setlocale(LC_ALL, "en_US.UTF-8") == NULL){ // Set utf-8 as used standard
@@ -227,6 +176,6 @@ int main(int argc, char *argv[]){
         return 0;
     } 
     open_and_setup_file("TODO");
-    print_items_after(29, 20);
+    print_items_after(0, 10);
     return 0;
 }
