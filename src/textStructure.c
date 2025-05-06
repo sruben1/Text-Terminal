@@ -12,6 +12,7 @@ static LineBstd _currLineB = NO_INIT;
 static LineBidentifier _currLineBidentifier = NONE_ID;
 static char currentFile[] =  {'\0'};
 static bool currentlySaved = true;
+static uint8_t endOfTextSignal = END_OF_TEXT_CHAR;
 
 /*------ Function Implementations ------*/
 Sequence* Empty(LineBstd LineBstdToUse){
@@ -64,17 +65,18 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
   Size size = -1;
 
   if(sequence != NULL){
-    NodeResult nodeResult = getNodeForPosition(sequence, position);
+    int absoluteAtomicStartIdx = -1;
+    NodeResult nodeResult = getNodeForPosition(sequence, position, &absoluteAtomicStartIdx);
     DescriptorNode* node = nodeResult.node;
-    if (node != NULL) {
-      int offset = node->offset + (position - nodeResult.startPosition);
+    if ( (node != NULL) && (startPosition > -1)) {
+      int offset = node->offset + (position - absoluteAtomicStartIdx);
       if (node->isInFileBuffer){
         *returnedItemBlock = sequence->fileBuffer.data + offset;
       } else {
         *returnedItemBlock = sequence->addBuffer.data + offset;
       }
       return node->size - offset;
-    }
+    } 
   }
 
   return size;
