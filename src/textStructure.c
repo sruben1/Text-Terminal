@@ -68,7 +68,7 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
     int absoluteAtomicStartIdx = -1;
     NodeResult nodeResult = getNodeForPosition(sequence, position, &absoluteAtomicStartIdx);
     DescriptorNode* node = nodeResult.node;
-    if ( (node != NULL) && (startPosition > -1)) {
+    if ( (node != NULL) && (absoluteAtomicStartIdx > -1)) {
       int offset = node->offset + (position - absoluteAtomicStartIdx);
       if (node->isInFileBuffer){
         *returnedItemBlock = sequence->fileBuffer.data + offset;
