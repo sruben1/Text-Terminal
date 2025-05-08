@@ -1,5 +1,8 @@
 // textStructure.c
 #include "textStructure.h"  
+#include <wchar.h>
+#include <stdlib.h>
+#include <string.h>
 
 /*------ Data structures for internal use ------*/
 typedef struct {
@@ -21,8 +24,10 @@ Sequence* Empty(LineBstd LineBstdToUse){
   newSeq->pieceTable.length = 0;
   newSeq->fileBuffer.data = NULL;
   newSeq->fileBuffer.size = 0;
+  newSeq->fileBuffer.capacity = 0;
   newSeq->addBuffer.data = NULL;
   newSeq->addBuffer.size = 0;
+  newSeq->addBuffer.capacity = 0;
   return newSeq;
 }
 
@@ -165,9 +170,37 @@ ReturnCode Insert( Sequence *sequence, Position position, wchar_t *textToInsert 
 }
 
 /* Appends the textToInsert to the add buffer */
-ReturnCode writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert){
-  // TODO: Implement
-  return -1;
+ReturnCode writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert) {
+    if (sequence == NULL || textToInsert == NULL) {
+        return -1; // Error: Invalid input
+    }
+
+    // Get the length of the text's UTF-8 representation in bytes
+    size_t byteLength = wcstombs(textToInsert, NULL, 0);
+
+    // TODO: Maybe shrink the buffer if it unnecessarily large
+
+    // Double the buffer's capacity if necessary
+    if (sequence->addBuffer.capacity < sequence->addBuffer.size + byteLength) {
+        size_t newCapacity = (sequence->addBuffer.capacity == 0) ? byteLength : sequence->addBuffer.capacity * 2;
+        while (newCapacity < sequence->addBuffer.size + byteLength) {
+            newCapacity *= 2;
+        }
+
+        char *newData = realloc(sequence->addBuffer.data, newCapacity);
+        if (newData == NULL) {
+            return -1; // Error: Memory allocation failed
+        }
+
+        sequence->addBuffer.data = newData;
+        sequence->addBuffer.capacity = newCapacity;
+    }
+
+    // Write the UTF-8 string to the end of the add buffer
+    wcstombs(sequence->addBuffer.data + sequence->addBuffer.size, textToInsert, byteLength);
+    sequence->addBuffer.size += byteLength;
+
+    return 1; // Erfolg
 }
 
 ReturnCode Close( Sequence *sequence, bool forceFlag ){

@@ -45,7 +45,8 @@ typedef struct{
 /* Buffer for storing text */
 typedef struct{
   Atomic *data;
-  unsigned long size;
+  size_t size; // occupied space
+  size_t capacity; // allocated space
 } Buffer;
 
 /* Combined data structure */
