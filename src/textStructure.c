@@ -17,6 +17,10 @@ static char currentFile[] =  {'\0'};
 static bool currentlySaved = true;
 static uint8_t endOfTextSignal = END_OF_TEXT_CHAR;
 
+/*------ Declarations ------ */
+NodeResult getNodeForPosition(Sequence *sequence, Position position);
+ReturnCode writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert);
+
 /*------ Function Implementations ------*/
 Sequence* Empty(LineBstd LineBstdToUse){
   Sequence *newSeq = (Sequence*) malloc(sizeof(Sequence));
@@ -39,42 +43,20 @@ LineBidentifier getCurrentLineBidentifier(){
 }
 
 Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemBlock){
-  static const unsigned char dummyString[] = {// equals: "First Line\nSeccondLine \n \n\n\n\n ä🔝"
-    0x46, 0x69, 0x72, 0x73, 0x74, 0x20, 0x4C, 0x69, 0x6E, 0x65, 0x0A, 
-    0x53, 0x65, 0x63, 0x63, 0x6F, 0x6E, 0x64, 0x4C, 0x69, 0x6E, 0x65, 0x20, 0x0A,
-    0x20, 
-    0x0A, 
-    0x0A, 
-    0x0A, 
-    0x0A, 
-    0x20, 0xC3, 0xA4, 0xF0, 0x9F, 0x94, 0x9D
-};
-
-  int startPosOfBLock = 0; 
-  int offset = position - startPosOfBLock;
-  Size size = 36 - offset; //size == size of array
-
-  if (position > 36){
-    return -1;
-  }
-
-  if(size >= 1){
-    *returnedItemBlock =  ((Atomic*)&dummyString + offset);
-    return size;
-  } else{
-    *returnedItemBlock = NULL;
-    return -1;
+  if (sequence == NULL || position < 0 || returnedItemBlock == NULL){
+    return -1; // Error
   }
   
-  /* TODO : prevent splitting within a multi byte utf-8 char
   Size size = -1;
+  
+  // TODO: prevent splitting within a multi byte utf-8 char
+  // TODO: handle cast of last descriptor node
 
   if(sequence != NULL){
-    int absoluteAtomicStartIdx = -1;
-    NodeResult nodeResult = getNodeForPosition(sequence, position, &absoluteAtomicStartIdx);
+    NodeResult nodeResult = getNodeForPosition(sequence, position);
     DescriptorNode* node = nodeResult.node;
-    if ( (node != NULL) && (absoluteAtomicStartIdx > -1)) {
-      int offset = node->offset + (position - absoluteAtomicStartIdx);
+    if (node != NULL) {
+      int offset = node->offset + (position - nodeResult.startPosition);
       if (node->isInFileBuffer){
         *returnedItemBlock = sequence->fileBuffer.data + offset;
       } else {
@@ -85,7 +67,6 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
   }
 
   return size;
-  */
 }
 
 /* Helper function for traversing the piece table to find the node containing text at a given position */
@@ -176,7 +157,7 @@ ReturnCode writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert) {
     }
 
     // Get the length of the text's UTF-8 representation in bytes
-    size_t byteLength = wcstombs(textToInsert, NULL, 0);
+    size_t byteLength = wcstombs(NULL, textToInsert, 0);
 
     // TODO: Maybe shrink the buffer if it unnecessarily large
 
@@ -200,7 +181,7 @@ ReturnCode writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert) {
     wcstombs(sequence->addBuffer.data + sequence->addBuffer.size, textToInsert, byteLength);
     sequence->addBuffer.size += byteLength;
 
-    return 1; // Erfolg
+    return 1;
 }
 
 ReturnCode Close( Sequence *sequence, bool forceFlag ){
