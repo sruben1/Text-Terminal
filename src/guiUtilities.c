@@ -1,23 +1,157 @@
-
 #include "guiUtilities.h"
-/*======== Backend gui data structures ========*/
-typedef struct {
-    int size;
-    int topLineIdx;
-    int absolutePos[75];
-} LineStats;
+
+#include "debugUtil.h"
+
+/*
+==================================
+    Line statistics data structure: 
+==================================
+*/
 
 // Data structure for currently shown lines' statistics.
-LineStats lineStats = { -1, 0, {[0 ... 74] = -1} };
+typedef struct {
+    // Currently shown upper most line's line number counted from the very beginning of text:
+    int topMostLineNbr;
+    // Number of UTF-8 chars in line without counting control chars:
+    int charCount[75]; 
+    // Absolute atomic position of curent lines:
+    int absolutePos[75]; // here -1 consistently inserted into last index +1 => if at index 0 value == -1 -> signifies not in update state! 
+} LineStats;
+LineStats lineStats = {
+    .topMostLineNbr = 0,
+    .charCount = {[0 ... 74] = 0},
+    .absolutePos = {[0 ... 74] = -1}
+};
 
-int getAbsoluteAtomicIndex(int relativeLine, int column, Sequence* sequence){
+/**
+ * Returns the absolute line nbr from the very start, of a specific screen line.
+ * >> The line number requires counting from 0. Returns -1 on error.
+ * >> Returns -1 if general state invalid, but does not check if requested relative line (on screen) is beyond range.
+ */
+int getGeneralLineNbr(int lineNbrOnScreen){
+    // Make sure internal state is indeed updated:
+    if (lineStats.absolutePos[0] != -1){ 
+        return lineStats.topMostLineNbr + lineNbrOnScreen;
+    } else{
+        return -1;
+    }
+}
 
+/**
+ * Returns the number of Utf-8 chars in a given line, the line number requires counting from 0.
+ */
+int getUtfNoControlCharCount(int relativeLine){
+    // Make sure internal state is indeed updated:
+    if (lineStats.absolutePos[0] != -1){ 
+        return lineStats.charCount[relativeLine];
+    } else{
+        return -1;
+    }
+}
 
-    statsUpToDate = true;
+/**
+ * Interface to invalidate current line statistics until first line is updated again. 
+ */
+ReturnCode setLineStatsNotUpdated(){
+    lineStats.absolutePos[0] = -1;
     return 1;
 }
 
-/*======== W-CHAR utilities ========*/
+/**
+ * Function to update internal line statistics data structure. Relative line number counting from 0. 
+ */
+ReturnCode updateLine(int relativeLineNumber, int absoluteGeneralAtomicPosition , int nbrOfUtf8CNoControlChars){
+    lineStats.absolutePos[relativeLineNumber] = absoluteGeneralAtomicPosition;
+    lineStats.charCount[relativeLineNumber] = nbrOfUtf8CNoControlChars;
+    return 1;
+}
+
+/**
+ * Function to call when scrolling.
+ *  requires full update of statistics afterwards since operation invalidates internal state.
+ */
+ReturnCode moveAbsoluteLineNumbers(int addOrSubstract){
+    setLineStatsNotUpdated();
+    lineStats.topMostLineNbr += addOrSubstract;
+    return 1;
+}
+
+/**
+ * Function to call when scrolling. Counting line numbers form 0. 
+ *  requires full update of statistics afterwards since operation invalidates internal state.
+ */
+ReturnCode setAbsoluteLineNumber(int newLineNumber){
+    setLineStatsNotUpdated();
+    lineStats.topMostLineNbr = newLineNumber;
+    return 1;
+}
+
+/**
+ * Function to translate current screen position to (general) absolute atomic index. 
+ * >> relativeLine and charColumn require counting form position 0.
+ */
+int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence){
+    
+    // Check that request is valid in current data structure state: 
+    for(int i = 0; i <= relativeLine; i++){
+        if (lineStats.absolutePos[i] == -1){
+            ERR_PRINT("Char position translation is beyond currently stored lines!");
+            return -1;
+        }
+    }
+    
+    // quick access case:
+    if(charColumn == 0){
+        return lineStats.absolutePos[relativeLine];
+    } 
+
+    // General case, determine by iterating through chars:
+    Atomic *currentItemBlock = NULL;
+
+    int atomicIndex = 0;
+
+    // Get first block of the line
+    Size size = getItemBlock(sequence, lineStats.absolutePos[relativeLine], &currentItemBlock);
+    if(size < 0){
+        ERR_PRINT("Position determination failed (on first block request).\n");
+        return -1;
+    }
+
+    LineBidentifier lineBidentifier = getCurrentLineBidentifier();
+
+    int charCounter = 0;
+    int blockOffset = 0;
+    while (atomicIndex < charColumn){
+        if(atomicIndex >= size + blockOffset){
+            // get next block
+            size = getItemBlock(sequence, lineStats.absolutePos[relativeLine] + atomicIndex, &currentItemBlock);
+            if(size < 0){
+                ERR_PRINT("Position determination failed (on consecutive block request).\n");
+                return -1;
+            }
+        }
+        DEBG_PRINT("seeking at char: '%c'\n", currentItemBlock[atomicIndex]); 
+        if(currentItemBlock[atomicIndex] == lineBidentifier){
+            // found line end (char)
+            ERR_PRINT("Line shorter then requested column postion!\n");
+            return -1;
+        }
+        if( ((currentItemBlock[atomicIndex] & 0xC0) != 0x80) && (currentItemBlock[atomicIndex] >= 0x20) ){
+            // If start of char UTF-8 char and not a control char:
+            charCounter++;
+        }
+        atomicIndex++;
+    }
+    DEBG_PRINT("Seek ended with blockSize = %d, blockOffset = %d, nbr of chars %d\n", size, blockOffset, charCounter);
+    return charCounter;
+}
+
+
+/*
+====================
+    W-CHAR utilities:
+====================
+*/
 
 /*Function that returns a wChar string with L'\0' terminator. 
 >> sizeToPass == last parsed index of itemArray **+1**; 
@@ -68,7 +202,7 @@ wchar_t* utf8_to_wchar(const Atomic* itemArray, int sizeToParse, int precomputed
         //SET_BREAK_POINT;
     }
     //Finalize parse
-    if ((destIndx < precomputedWCharCount)){
+    if (( (int) destIndx < precomputedWCharCount)){
         ERR_PRINT("Parser did not reach expected nbr of UTF-8 chars: Atomics index %d ; UTF-8 chars index: %d ",(int) atomicIndx,(int) destIndx);
         wStrToReturn[(int)destIndx] = L'\0';
     } else{

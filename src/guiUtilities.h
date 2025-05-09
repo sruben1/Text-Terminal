@@ -4,16 +4,59 @@
 #include <wchar.h>
 #include <string.h>
 
-#include "debugUtil.h"
 #include "textStructure.h"
 
-static int currentFirstLineAbsoluteIdx;
-static bool statsUpToDate = false;
+/*
+==================================
+    Line statistics data structure: 
+==================================
+*/
 
 /**
- * Function to translate current screen position to (general) absolute atomic index.
+ * Returns the absolute line nbr from the very start, of a specific screen line.
+ * >> The line number requires counting from 0. Returns -1 on error.
+ * >> Returns -1 if general state invalid, but does not check if requested relative line (on screen) is beyond range.
  */
-int getAbsoluteAtomicIndex(int relativeLine, int column, Sequence* sequence);
+int getGeneralLineNbr(int lineNbrOnScreen);
+
+/**
+ * Returns the number of Utf-8 chars in a given line, the line number requires counting from 0.
+ */
+int getUtfNoControlCharCount(int relativeLine);
+
+/**
+ * Function to translate current screen position to (general) absolute atomic index. 
+ * >> relativeLine and charColumn require counting form position 0.
+ */
+int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence);
+
+/**
+ * Interface to invalidate current line statistics until first line is updated again. 
+ */
+ReturnCode setLineStatsNotUpdated();
+
+/**
+ * Function to update internal line statistics data structure. Line number counting from 0. 
+ */
+ReturnCode updateLine(int relativeLineNumber, int absoluteGeneralAtomicPosition , int nbrOfUtf8CNoControlChars);
+
+/**
+ * Function to call when scrolling.
+ *  requires full update of statistics afterwards since operation invalidates internal state.
+ */
+ReturnCode moveAbsoluteLineNumbers(int addOrSubstract);
+
+/**
+ * Function to call when scrolling. Counting line numbers form 0. 
+ *  requires full update of statistics afterwards since operation invalidates internal state.
+ */
+ReturnCode setAbsoluteLineNumber(int newLineNumber);
+
+/*
+====================
+    W-CHAR utilities:
+====================
+*/
 
 /** 
  * Function that returns a wChar string with L'\0' terminator. 
