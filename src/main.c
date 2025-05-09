@@ -64,7 +64,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
         }
         
 
-        if(( size < 0 ) || ( currentItemBlock == NULL )){DEBG_PRINT("Main error: size value %d\n", size); return -1; }//Error!!
+        if(( size <= 0 ) || ( currentItemBlock == NULL )){DEBG_PRINT("Main error: size value %d\n", size); return -1; }//Error!!
 
         int currentSectionStart = 0; //i.e. offset of nbr of Items form pointer start
         int offsetCounter = 0; //i.e. RUNNING offset of nbr of Items form currentSectionStart
@@ -128,11 +128,10 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                     atomicsInLine += offsetCounter+1;
                     nbrOfUtf8CharsInLine += nbrOfUtf8Chars;
                     nbrOfUtf8CharsNoControlCharsInLine += nbrOfUtf8CharsNoControlChars;
-                    /*
-                      >>> TODO: take in line stats (from variables) here
-                    */
+                    // Save in the line stats (from variables) into dedicated management structure:
+                    //updateLine();
                    
-                    ++currLineBcount; // Includes the current line; please ensure to keep the increment by 1 here...
+                    currLineBcount++; // Includes the current line; please ensure to keep the increment by 1 here...
                     nbrOfUtf8CharsNoControlCharsInLine; // Use this if should not count any '\n' '\r' ... chars
                     nbrOfUtf8CharsInLine;
 
@@ -155,7 +154,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
             }
             offsetCounter++;
             if((currentSectionStart + offsetCounter >= size)){
-                DEBG_PRINT("Setting flag for consecutive request");
+                DEBG_PRINT("Setting flag for consecutive request\n");
                 requestNextBlock = true;
             }
         }   
@@ -176,6 +175,8 @@ int main(int argc, char *argv[]){
         return 0;
     } 
     open_and_setup_file("TODO");
-    print_items_after(0, 10);
+    Insert(activeSequence, 0, L"Frist \n 2.\n3.\n");
+    Insert(activeSequence, 11,L" Ä 🔝. 4.\n");
+    print_items_after(0, 20);
     return 0;
 }
