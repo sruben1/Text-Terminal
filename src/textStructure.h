@@ -94,4 +94,12 @@ ReturnCode Move( Sequence *sequence, Position fromBegin, Position fromEnd, Posit
 
 ReturnCode Undo( Sequence *sequence);
 ReturnCode Redo( Sequence *sequence);
+
+
+/*
+=============
+  Debug Utils
+=============
+*/
+void debugPrintInternalState(Sequence* sequence, bool showAddBuff, bool showFileBuff);
 #endif

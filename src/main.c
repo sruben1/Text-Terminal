@@ -108,7 +108,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                 DEBG_PRINT("~~~~~~~~~~~~~~~~~~\n");
                 for (size_t i = 0; lineToPrint[i] != L'\0'; i++) {
                     if(lineToPrint[i] != L'\n'){
-                        putwchar(lineToPrint[i]);
+                        DEBG_PRINT("%lc", (uint32_t) lineToPrint[i]);
                     } else {
                         DEBG_PRINT("[\\n]");
                     }
@@ -175,8 +175,14 @@ int main(int argc, char *argv[]){
         return 0;
     } 
     open_and_setup_file("TODO");
-    Insert(activeSequence, 0, L"Frist \n 2.\n3.\n");
-    Insert(activeSequence, 11,L" Ä 🔝. 4.\n");
+    if(Insert(activeSequence, 0, L"\u1F6F8") < 0){ //\u1F6F8 -> expect F0 9F 9B B8
+        DEBG_PRINT("Insert returned with error!\n");
+    }
+    debugPrintInternalState(activeSequence, true,false);
+    /*if(Insert(activeSequence, 13,L". 4.\n") < 0){ //Try with this syntax \u1F6F8
+        DEBG_PRINT("Insert returned with error...");
+    }
+    debugPrintInternalState(activeSequence, true,false);*/
     print_items_after(0, 20);
     return 0;
 }
