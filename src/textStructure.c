@@ -62,7 +62,7 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
   DescriptorNode* node = nodeResult.node;
   if (node != NULL) {
     int offset = node->offset + (position - nodeResult.startPosition);
-    size = node->size - offset;
+    size = node->size - (position - nodeResult.startPosition);
 
     if (node->isInFileBuffer){
       *returnedItemBlock = sequence->fileBuffer.data + offset;
@@ -165,6 +165,7 @@ ReturnCode Insert( Sequence *sequence, Position position, wchar_t *textToInsert 
   
   // >> Piece Table update cases <<
   if(position == summedSizes -1){  //Case of insert at already existing piece table split:
+    DEBG_PRINT("Insert at already existing piece table split.\n");
     // Update piece table state:
     previous->next_ptr = newInsert;
     //(if end of table: current == NULL, so this behavior ok):
