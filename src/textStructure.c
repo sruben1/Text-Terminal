@@ -49,33 +49,27 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
   if (sequence == NULL || position < 0 || returnedItemBlock == NULL){
     return -1; // Error
   }
-  
   Size size = -1;
   
-  // TODO: prevent splitting within a multi byte utf-8 char
+  NodeResult nodeResult = getNodeForPosition(sequence, position);
 
-  if(sequence != NULL){
-    NodeResult nodeResult = getNodeForPosition(sequence, position);
-
-    if (nodeResult.startPosition == -2){
-      // Special case: Position at end of the sequence requested
-      *returnedItemBlock = &endOfTextSignal;
-      return 1;
-    }
-
-    DescriptorNode* node = nodeResult.node;
-    if (node != NULL) {
-      size = node->size;
-      
-      int offset = node->offset + (position - nodeResult.startPosition);
-      if (node->isInFileBuffer){
-        *returnedItemBlock = sequence->fileBuffer.data + offset;
-      } else {
-        *returnedItemBlock = sequence->addBuffer.data + offset;
-      }
-      return size;
-    } 
+  if (nodeResult.startPosition == -2){
+    // Special case: Position at end of the sequence requested
+    *returnedItemBlock = &endOfTextSignal;
+    return 1;
   }
+
+  DescriptorNode* node = nodeResult.node;
+  if (node != NULL) {
+    int offset = node->offset + (position - nodeResult.startPosition);
+    size = node->size - offset;
+
+    if (node->isInFileBuffer){
+      *returnedItemBlock = sequence->fileBuffer.data + offset;
+    } else {
+      *returnedItemBlock = sequence->addBuffer.data + offset;
+    }
+  } 
 
   return size;
 }
