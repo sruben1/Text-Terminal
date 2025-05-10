@@ -61,6 +61,7 @@ ReturnCode setLineStatsNotUpdated(){
  * Function to update internal line statistics data structure. Relative line number counting from 0. 
  */
 ReturnCode updateLine(int relativeLineNumber, int absoluteGeneralAtomicPosition , int nbrOfUtf8CNoControlChars){
+    DEBG_PRINT("[Line Stats] : Updated line nbr %d to Atomic Idx: %d, charCount: %d.\n", relativeLineNumber, absoluteGeneralAtomicPosition, nbrOfUtf8CNoControlChars);
     lineStats.absolutePos[relativeLineNumber] = absoluteGeneralAtomicPosition;
     lineStats.charCount[relativeLineNumber] = nbrOfUtf8CNoControlChars;
     return 1;
@@ -77,7 +78,7 @@ ReturnCode moveAbsoluteLineNumbers(int addOrSubstract){
 }
 
 /**
- * Function to call when scrolling. Counting line numbers form 0. 
+ * Function to call when jumping to specific line. Counting line numbers form 0. 
  *  requires full update of statistics afterwards since operation invalidates internal state.
  */
 ReturnCode setAbsoluteLineNumber(int newLineNumber){

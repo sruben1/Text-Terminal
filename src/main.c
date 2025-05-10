@@ -46,6 +46,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
     int atomicsInLine = 0; // not an index! (+1 generally) 
     int nbrOfUtf8CharsInLine = 0;
     int nbrOfUtf8CharsNoControlCharsInLine = 0; // If we want to ignore line breaks.
+    int frozenLineStart = 0; // Stays set until line break or end of text for statistics
 
     while( currLineBcount < nbrOfLines ){
         DEBG_PRINT("[Trace] : in main while loop, %p %d %d \n", activeSequence, currentLineBreakStd, currentLineBidentifier);
@@ -53,6 +54,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
         if(requestNextBlock){
             DEBG_PRINT("[Trace] : Consecutive block requested\n");
             firstAtomic = firstAtomic + size; // since size == last index +1 no additional +1 needed.
+            frozenLineStart = firstAtomic;
             size = (int) getItemBlock(activeSequence, firstAtomic, &currentItemBlock);
             DEBG_PRINT("The size value %d\n", size);
             if (size < 0){
@@ -99,7 +101,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                 /* 
                 TODO :
                 print out line or block (could be either!!), interpreted as UTF-8 sequence here using : "lineToPrint" and mvaddwstr()?
-                
+                Horizontal scrolling  (i.e.left truncation) and right side truncation needed here as well.
                 */
 
 
@@ -131,15 +133,16 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                     nbrOfUtf8CharsInLine += nbrOfUtf8Chars;
                     nbrOfUtf8CharsNoControlCharsInLine += nbrOfUtf8CharsNoControlChars;
                     // Save in the line stats (from variables) into dedicated management structure:
-                    //updateLine();
+                    updateLine(currLineBcount++, currentSectionStart, nbrOfUtf8CharsNoControlCharsInLine);
                    
-                    currLineBcount++; // Includes the current line; please ensure to keep the increment by 1 here...
-                    nbrOfUtf8CharsNoControlCharsInLine; // Use this if should not count any '\n' '\r' ... chars
+                     // Includes the current line; please ensure to keep the increment by 1 here...
+                    ; // Use this if should not count any '\n' '\r' ... chars
                     nbrOfUtf8CharsInLine;
 
                     DEBG_PRINT("atomicsInLine: %d, nbrOfUtf8CharsInLine: %d, nbrOfUtf8CharsNoControlCharsInLine: %d\n", atomicsInLine, nbrOfUtf8CharsInLine, nbrOfUtf8CharsNoControlCharsInLine);
                     // Reset variables for next line:
                     atomicsInLine = 0;
+                    frozenLineStart = currentSectionStart + offsetCounter +1;
                     nbrOfUtf8CharsInLine = 0;
                     nbrOfUtf8CharsNoControlCharsInLine = 0;
                 } else{
@@ -176,9 +179,17 @@ int main(int argc, char *argv[]){
         ERR_PRINT("Fatal error: failed to set LOCAL to UTF-8!\n");
         return 0;
     } 
+    open_and_setup_file("TODO");
+
+
+
+
+
+
+    /* Debugging code:*/
     DEBG_PRINT("SIZE = %d\n", sizeof(wchar_t));
     
-    open_and_setup_file("TODO");
+    
     if(Insert(activeSequence, 0, L"\U0001F6F8 It works!! \n aaa \n 64\n\n") < 0){ //\u0001F6F8 -> expect F0 9F 9B B8
         DEBG_PRINT("Insert returned with error!\n");
     }
@@ -187,6 +198,19 @@ int main(int argc, char *argv[]){
         DEBG_PRINT("Insert returned with error...");
     }
     debugPrintInternalState(activeSequence, true,false);
+    if(0 > getUtfNoControlCharCount(2)){
+        DEBG_PRINT("Lines indeed not statistically evaluated (call correctly failed)\n");
+    }
     print_items_after(0, 20);
+    int i = -1;
+    if((i = getUtfNoControlCharCount(2)) > 0){
+        DEBG_PRINT("Lines now statistically evaluated (call succeeded)\n");
+    }
+    /*End of debugging code*/
+
+
+
+
+    
     return 0;
 }
