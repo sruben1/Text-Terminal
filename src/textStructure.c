@@ -22,6 +22,7 @@ static uint8_t endOfTextSignal = END_OF_TEXT_CHAR;
 /*------ Declarations ------ */
 NodeResult getNodeForPosition(Sequence *sequence, Position position);
 ReturnCode writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert);
+size_t getUtf8ByteSize(const wchar_t* wstr);
 
 /*------ Function Implementations ------*/
 Sequence* Empty(LineBstd LineBstdToUse){
@@ -111,7 +112,7 @@ ReturnCode Insert( Sequence *sequence, Position position, wchar_t *textToInsert 
     DescriptorNode* firstNode = (DescriptorNode*) malloc(sizeof(DescriptorNode));
     firstNode->isInFileBuffer = false;
     firstNode->offset = 0;
-    firstNode->size = wcslen(textToInsert);
+    firstNode->size = (long int) getUtf8ByteSize(textToInsert);
     firstNode->next_ptr = NULL;
 
     sequence->pieceTable.first = firstNode;
@@ -158,7 +159,7 @@ ReturnCode Insert( Sequence *sequence, Position position, wchar_t *textToInsert 
   // Updated newly created node with the new insert:
   newInsert->isInFileBuffer = false;
   newInsert->offset = newlyWrittenBufferOffset;
-  newInsert->size = wcslen(textToInsert);
+  newInsert->size = (long int) getUtf8ByteSize(textToInsert);
   
   // >> Piece Table update cases <<
   if(position == summedSizes -1){  //Case of insert at already existing piece table split:
@@ -194,7 +195,7 @@ Position writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert) {
     }
 
     // Get the length of the text's UTF-8 representation in bytes
-    size_t byteLength = wcstombs(NULL, textToInsert, 0);
+    size_t byteLength = getUtf8ByteSize(textToInsert);
 
     // TODO: Maybe shrink the buffer if it unnecessarily large
 
@@ -283,4 +284,11 @@ void debugPrintInternalState(Sequence* sequence, bool showAddBuff, bool showFile
     }
     DEBG_PRINT("\n\n");
   }
+}
+
+
+
+size_t getUtf8ByteSize(const wchar_t* wstr) {
+    mbstate_t state = {0};
+    return wcsrtombs(NULL, &wstr, 0, &state);
 }
