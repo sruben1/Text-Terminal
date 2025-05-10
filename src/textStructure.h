@@ -11,7 +11,7 @@
  * Some of the fundamental principles were developed with regards to: https://www.cs.unm.edu/~crowley/papers/sds/sds.html
  */
 
- #define END_OF_TEXT_CHAR 0x03
+#define END_OF_TEXT_CHAR 0x03
 
 typedef int ReturnCode; /* 1: success; negative: failure; 0: undefined*/
 typedef int Position; /* a position in the sequence */

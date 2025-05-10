@@ -17,7 +17,7 @@ static LineBstd _currLineB = NO_INIT;
 static LineBidentifier _currLineBidentifier = NONE_ID;
 static char currentFile[] =  {'\0'};
 static bool currentlySaved = true;
-static uint8_t endOfTextSignal = END_OF_TEXT_CHAR;
+static Atomic endOfTextSignal = END_OF_TEXT_CHAR;
 
 /*------ Declarations ------ */
 NodeResult getNodeForPosition(Sequence *sequence, Position position);
@@ -53,10 +53,16 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
   Size size = -1;
   
   // TODO: prevent splitting within a multi byte utf-8 char
-  // TODO: handle cast of last descriptor node
 
   if(sequence != NULL){
     NodeResult nodeResult = getNodeForPosition(sequence, position);
+
+    if (nodeResult.startPosition == -2){
+      // Special case: Position at end of the sequence requested
+      *returnedItemBlock = &endOfTextSignal;
+      return 1;
+    }
+
     DescriptorNode* node = nodeResult.node;
     if (node != NULL) {
       size = node->size;
@@ -95,6 +101,9 @@ NodeResult getNodeForPosition(Sequence *sequence, Position position){
     }
     curr = curr->next_ptr;
   }
+  if (position == i) {
+    result.startPosition = -2; // Special case: Position at end of the sequence requested
+  }
 
   return result;
 }
@@ -127,7 +136,6 @@ ReturnCode Insert( Sequence *sequence, Position position, wchar_t *textToInsert 
     return -1; // Error: Position out of bounds
   }
 
-  // TODO: Maybe handle edge cases (e.g. inserting at the end) if necessary
   int distanceInBlock = position - nodeResult.startPosition;
   int newlyWrittenBufferOffset = writeToAddBuffer(sequence, textToInsert);
   if (newlyWrittenBufferOffset == -1){
