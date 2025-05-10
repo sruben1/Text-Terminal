@@ -58,9 +58,11 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
             if (size < 0){
                 return 2;
             }
+            requestNextBlock = false;
         } else{
             DEBG_PRINT("[Trace] : First block requested\n");
             size = (int) getItemBlock(activeSequence, firstAtomic, &currentItemBlock);
+            DEBG_PRINT("The size value %d\n", size);
         }
         
 
@@ -175,14 +177,14 @@ int main(int argc, char *argv[]){
         return 0;
     } 
     open_and_setup_file("TODO");
-    if(Insert(activeSequence, 0, L"\u1F6F8") < 0){ //\u1F6F8 -> expect F0 9F 9B B8
+    if(Insert(activeSequence, 0, L"aaa \n Some lines later \n") < 0){ //\u1F6F8 -> expect F0 9F 9B B8
         DEBG_PRINT("Insert returned with error!\n");
     }
     debugPrintInternalState(activeSequence, true,false);
-    /*if(Insert(activeSequence, 13,L". 4.\n") < 0){ //Try with this syntax \u1F6F8
+    if(Insert(activeSequence, 2,L"new|") < 0){
         DEBG_PRINT("Insert returned with error...");
     }
-    debugPrintInternalState(activeSequence, true,false);*/
+    debugPrintInternalState(activeSequence, true,false);
     print_items_after(0, 20);
     return 0;
 }

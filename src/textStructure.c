@@ -58,20 +58,24 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
     NodeResult nodeResult = getNodeForPosition(sequence, position);
     DescriptorNode* node = nodeResult.node;
     if (node != NULL) {
+      size = node->size;
+      
       int offset = node->offset + (position - nodeResult.startPosition);
       if (node->isInFileBuffer){
         *returnedItemBlock = sequence->fileBuffer.data + offset;
       } else {
         *returnedItemBlock = sequence->addBuffer.data + offset;
       }
-      return node->size - offset;
+      return size;
     } 
   }
 
   return size;
 }
 
-/* Helper function for traversing the piece table to find the node containing text at a given position */
+/**
+ * Helper function for traversing the piece table to find the node containing text at a given position. 
+ */
 NodeResult getNodeForPosition(Sequence *sequence, Position position){
   NodeResult result = {NULL, -1};
 
@@ -124,36 +128,67 @@ ReturnCode Insert( Sequence *sequence, Position position, wchar_t *textToInsert 
 
   // TODO: Maybe handle edge cases (e.g. inserting at the end) if necessary
   int distanceInBlock = position - nodeResult.startPosition;
-  if (writeToAddBuffer(sequence, textToInsert) == -1){
+  int newlyWrittenBufferOffset = writeToAddBuffer(sequence, textToInsert);
+  if (newlyWrittenBufferOffset == -1){
+    ERR_PRINT("Insert failed at write to add buffer.\n");
     return -1; // Error: Failed to write to buffer
   }
 
-  // First node points to the preceding text
-  firstNode->size = distanceInBlock;
+  DescriptorNode* previous = firstNode;
+  DescriptorNode* current = firstNode;
+  int summedSizes = 0;
+  while(current != NULL){
+    summedSizes += current->size;
+    // Reached node of or exactly at "position": 
+    if(position < summedSizes){ 
+      // Undo last operation:
+      summedSizes -= current->size;
+      break;
+    }
+    previous = current;
+    current = current->next_ptr; 
+  }
 
-  // Second node points to the inserted text
-  DescriptorNode* secondNode = (DescriptorNode*) malloc(sizeof(DescriptorNode));
-  secondNode->isInFileBuffer = false;
-  secondNode->size = wcslen(textToInsert);
-  secondNode->offset = sequence->addBuffer.size - secondNode->size;
+  DescriptorNode* newInsert = (DescriptorNode*) malloc(sizeof(DescriptorNode));
+  if(newInsert == NULL){
+    ERR_PRINT("Fatal malloc fail at insert operation!\n");
+    return -1;
+  }
 
-  // Third node points to the subsequent text
-  DescriptorNode* thirdNode = (DescriptorNode*) malloc(sizeof(DescriptorNode));
-  thirdNode->isInFileBuffer = firstNode->isInFileBuffer;
-  thirdNode->offset = firstNode->offset + distanceInBlock;
-  thirdNode->size = firstNode->size - distanceInBlock;
+  // Updated newly created node with the new insert:
+  newInsert->isInFileBuffer = false;
+  newInsert->offset = newlyWrittenBufferOffset;
+  newInsert->size = wcslen(textToInsert);
+  
+  // >> Piece Table update cases <<
+  if(position == summedSizes -1){  //Case of insert at already existing piece table split:
+    // Update piece table state:
+    previous->next_ptr = newInsert;
+    //(if end of table: current == NULL, so this behavior ok):
+    newInsert->next_ptr = current;
 
-  // Update the piece table
-  thirdNode->next_ptr = firstNode->next_ptr;
-  secondNode->next_ptr = thirdNode;
-  firstNode->next_ptr = secondNode;
-  sequence->pieceTable.length += 2;
+    sequence->pieceTable.length += 1;
+  } else {//Case of insert position within an existing piece:
+    // Need to split into 3 pieces:
+    // convert current as first part and put remaining in seccond:
+    DescriptorNode* seccondPart = (DescriptorNode*) malloc(sizeof(DescriptorNode)); 
+    seccondPart->size = current->size - (position - summedSizes); //set size of inverse of first part.
+    current->size = position - summedSizes; //set size of first part.
+    // current already at right offset since essentially truncating it.
+    seccondPart->offset =  current->offset + current->size;
+    
+    // Update the piece table
+    seccondPart->next_ptr = current->next_ptr;
+    newInsert->next_ptr = seccondPart;
+    current->next_ptr = newInsert;
 
+    sequence->pieceTable.length += 2;
+  }
   return 1;
 }
 
-/* Appends the textToInsert to the add buffer */
-ReturnCode writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert) {
+/* Appends the textToInsert to the add buffer, returns the (offset) Position */
+Position writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert) {
     if (sequence == NULL || textToInsert == NULL) {
         return -1; // Error: Invalid input
     }
@@ -180,10 +215,11 @@ ReturnCode writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert) {
     }
 
     // Write the UTF-8 string to the end of the add buffer
+    int offset = (int) sequence->addBuffer.size;
     wcstombs(sequence->addBuffer.data + sequence->addBuffer.size, textToInsert, byteLength);
     sequence->addBuffer.size += byteLength;
 
-    return 1;
+    return (Position) offset;
 }
 
 ReturnCode Close( Sequence *sequence, bool forceFlag ){
