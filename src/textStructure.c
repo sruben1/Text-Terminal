@@ -108,6 +108,25 @@ NodeResult getNodeForPosition(Sequence *sequence, Position position){
   return result;
 }
 
+/**
+ * Checks if the byte at the given offset in the node is a continuation byte.
+ * A continuation byte in UTF-8 is a byte that starts with the bits 10xxxxxx.
+ * Returns 1 if it is a continuation byte, 0 if not, and -1 on error.
+ */
+int isContinuationByte(Sequence *sequence, DescriptorNode *node, int offsetInBlock) {
+  if (node == NULL || offsetInBlock < 0) {
+    return -1; // Error
+  }
+
+  Atomic *data = node->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+  if (data == NULL) {
+    return -1; // Error
+  }
+
+  Atomic byte = data[node->offset + offsetInBlock];
+  return (byte & 0xC0) == 0x80; // Check if the byte is a continuation byte
+}
+
 ReturnCode Insert( Sequence *sequence, Position position, wchar_t *textToInsert ){
   if (sequence == NULL || textToInsert == NULL){
     return -1; // Error
@@ -163,12 +182,23 @@ ReturnCode Insert( Sequence *sequence, Position position, wchar_t *textToInsert 
 
     // Split the existing node into two parts
     DescriptorNode* firstPart = nodeResult.node;
-    DescriptorNode* seccondPart = (DescriptorNode*) malloc(sizeof(DescriptorNode)); 
-    if (firstPart == NULL || seccondPart == NULL){
-      ERR_PRINT("Fatal malloc fail at insert operation!\n");
+    if (firstPart == NULL){
+      ERR_PRINT("Fatal error: first part node is NULL!\n");
+      free(newInsert);
       return -1;
     }
     int distanceInBlock = position - nodeResult.startPosition;
+    if (isContinuationByte(sequence, firstPart, distanceInBlock) != 0){
+      ERR_PRINT("Insert failed: Attempted split at continuation byte!\n");
+      free(newInsert);
+      return -1;
+    }
+    DescriptorNode* seccondPart = (DescriptorNode*) malloc(sizeof(DescriptorNode)); 
+    if (seccondPart == NULL){
+      ERR_PRINT("Fatal malloc fail at insert operation!\n");
+      free(newInsert);
+      return -1;
+    }
     seccondPart->isInFileBuffer = firstPart->isInFileBuffer;
     seccondPart->size = firstPart->size - distanceInBlock; // set size as inverse of first part.
     seccondPart->offset = firstPart->offset + distanceInBlock;
