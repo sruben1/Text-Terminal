@@ -198,6 +198,7 @@ void insert_character(wchar_t wc) {
 
     wchar_t buf[2] = {wc, L'\0'};
     if (insert(activeSequence, atomicPos, buf) == 1) {
+        cursorX++;
         setLineStatsNotUpdated();
     }
 }
