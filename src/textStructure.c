@@ -24,6 +24,7 @@ static Atomic endOfTextSignal = END_OF_TEXT_CHAR;
 NodeResult getNodeForPosition(Sequence *sequence, Position position);
 ReturnCode writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert);
 int isContinuationByte(Sequence *sequence, DescriptorNode *node, int offsetInBlock);
+int amountOfContinuationBytes(Sequence *sequence, DescriptorNode *node, int offsetInBlock);
 size_t getUtf8ByteSize(const wchar_t* wstr);
 
 /*------ Function Implementations ------*/
@@ -129,7 +130,7 @@ int isContinuationByte(Sequence *sequence, DescriptorNode *node, int offsetInBlo
 }
 
 ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert ){
-  if (sequence == NULL || textToInsert == NULL){
+  if (sequence == NULL || textToInsert == NULL || position < 0){
     return -1; // Error
   }
   
@@ -213,6 +214,138 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
   }
 
   return 1;
+}
+
+ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosition ){
+  if (sequence == NULL || beginPosition < 0 || endPosition < beginPosition) {
+    return -1; // Error
+  }
+
+  // Find the nodes for the given positions and check if a deletion is possible there
+  NodeResult startNodeResult = getNodeForPosition(sequence, beginPosition);
+  NodeResult endNodeResult = getNodeForPosition(sequence, endPosition);
+  DescriptorNode* startNode = startNodeResult.node;
+  DescriptorNode* endNode = endNodeResult.node;
+  if (startNode == NULL || endNode == NULL){
+    ERR_PRINT("Fatal error: No node found at given position!\n");
+    return -1;
+  }
+  int distanceInStartBlock = beginPosition - startNodeResult.startPosition;
+  int distanceInEndBlock = endPosition - endNodeResult.startPosition;
+  if (isContinuationByte(sequence, startNode, distanceInStartBlock) != 0 ||
+      amountOfContinuationBytes(sequence, startNode, distanceInStartBlock) > endPosition - beginPosition ||
+      amountOfContinuationBytes(sequence, endNode, distanceInEndBlock) > 0) {
+    ERR_PRINT("Delete failed: Attempted delete at continuation byte!\n");
+    return -1;
+  }
+
+  if (startNode == endNode){
+    // Deleting within a single node => split it into two nodes by creating a new node at the end position
+    DEBG_PRINT("Delete within a single node.\n");
+    DescriptorNode* newNode = (DescriptorNode*) malloc(sizeof(DescriptorNode));
+    if (newNode == NULL){
+      ERR_PRINT("Fatal malloc fail at delete operation!\n");
+      return -1;
+    }
+    newNode->isInFileBuffer = startNode->isInFileBuffer;
+    newNode->offset = endNode->offset + distanceInEndBlock;
+    newNode->size = endNode->size - distanceInEndBlock;
+    newNode->next_ptr = startNode->next_ptr;
+    distanceInEndBlock = 0;
+
+    startNode->size = distanceInEndBlock;
+    startNode->next_ptr = newNode;
+    sequence->pieceTable.length += 1;
+    endNode = newNode; 
+  } else {
+    // Deleting across multiple nodes => delete nodes in between
+    DEBG_PRINT("Delete across multiple nodes.\n");
+    DescriptorNode* curr = startNode->next_ptr;
+    while (curr != NULL && curr != endNode) {
+      DescriptorNode* next = curr->next_ptr;
+      free(curr);
+      curr = next;
+      sequence->pieceTable.length -= 1;
+    }
+  }
+
+  // Adjust the node at the end position
+  if (distanceInEndBlock + 1 == endNode->size) {
+    // Deletion includes last character of endNode => use next node instead
+    DEBG_PRINT("Delete includes last character of endNode.\n");
+    DescriptorNode* nextNode = endNode->next_ptr;
+    free(endNode); 
+    endNode = nextNode; 
+    sequence->pieceTable.length -= 1;
+  } else {
+    // Deletion does not include last character of endNode
+    DEBG_PRINT("Delete does not include last character of endNode.\n");
+    endNode->offset += distanceInEndBlock + 1;
+    endNode->size -= distanceInEndBlock + 1;
+  }
+  
+  // Adjust the node at the start position
+  if (distanceInStartBlock == 0) {
+    // Deletion includes first character of startNode => use previous node instead
+    DEBG_PRINT("Delete includes first character of startNode.\n");
+    free(startNode);
+    sequence->pieceTable.length -= 1;
+    DescriptorNode* prevNode = startNodeResult.prevNode;
+    if (prevNode != NULL) {
+      prevNode->next_ptr = endNode;
+    } else if (sequence->pieceTable.first == startNode) {
+      // If startNode is the first node, update the piece table's first pointer
+      sequence->pieceTable.first = endNode;
+    } else {
+      ERR_PRINT("Fatal error: prev node is NULL!\n");
+      return -1;
+    }
+  } else {
+    // Deletion does not include first character of startNode
+    DEBG_PRINT("Delete does not include first character of startNode.\n");
+    startNode->size = distanceInStartBlock;
+    startNode->next_ptr = endNode;
+  }
+  
+  return 1;
+}
+
+/**
+ * Reads the byte at a given offset in the node and computes the corresponding number of continuation bytes.
+ * If the byte itself is a continuation byte, it determines the number of continuation bytes that follow it.
+ */
+int amountOfContinuationBytes(Sequence *sequence, DescriptorNode *node, int offsetInBlock) {
+  if (node == NULL || offsetInBlock < 0) {
+    return -1; // Error
+  }
+
+  Atomic *data = node->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+  if (data == NULL) {
+    return -1; // Error
+  }
+  Atomic byte = data[node->offset + offsetInBlock];
+  if (byte >= 240) { // 4-byte character (11110xxx)
+    return 3;
+  } else if (byte >= 224) { // 3-byte character (1110xxxx)
+    return 2;
+  } else if (byte >= 192) { // 2-byte character (110xxxxx)
+    return 1;
+  } else if (byte >= 128) { // continuation byte (10xxxxxx)
+    int amount = 0;
+    // Read until the end of the node or until a non-continuation byte is found
+    for (int i = offsetInBlock + 1; i < node->size; i++) {
+      int result = isContinuationByte(sequence, node, i);
+      if (result == -1) {
+        return -1; // Error
+      } else if (result == 0) {
+        break; // Not a continuation byte
+      }     
+      amount++;
+    }
+    return amount; 
+  } else { // 1-byte character (0xxxxxxx)
+    return 0; 
+  }
 }
 
 /* Appends the textToInsert to the add buffer, returns the (offset) Position */
