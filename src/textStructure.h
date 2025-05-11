@@ -90,7 +90,7 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
 ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosition );
 
 ReturnCode copy( Sequence *sequence, Position fromBegin, Position fromEnd, Position toPosition );
-ReturnCode move( Sequence *sequence, Position fromBegin, Position fromEnd, Position toPosition );
+ReturnCode moveSequence( Sequence *sequence, Position fromBegin, Position fromEnd, Position toPosition );
 
 ReturnCode undo( Sequence *sequence);
 ReturnCode redo( Sequence *sequence);
