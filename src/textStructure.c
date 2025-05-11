@@ -23,10 +23,11 @@ static Atomic endOfTextSignal = END_OF_TEXT_CHAR;
 /*------ Declarations ------ */
 NodeResult getNodeForPosition(Sequence *sequence, Position position);
 ReturnCode writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert);
+int isContinuationByte(Sequence *sequence, DescriptorNode *node, int offsetInBlock);
 size_t getUtf8ByteSize(const wchar_t* wstr);
 
 /*------ Function Implementations ------*/
-Sequence* Empty(LineBstd LineBstdToUse){
+Sequence* empty(LineBstd LineBstdToUse){
   Sequence *newSeq = (Sequence*) malloc(sizeof(Sequence));
   newSeq->pieceTable.first = NULL;
   newSeq->pieceTable.length = 0;
@@ -127,7 +128,7 @@ int isContinuationByte(Sequence *sequence, DescriptorNode *node, int offsetInBlo
   return (byte & 0xC0) == 0x80; // Check if the byte is a continuation byte
 }
 
-ReturnCode Insert( Sequence *sequence, Position position, wchar_t *textToInsert ){
+ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert ){
   if (sequence == NULL || textToInsert == NULL){
     return -1; // Error
   }
@@ -249,7 +250,7 @@ Position writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert) {
     return (Position) offset;
 }
 
-ReturnCode Close( Sequence *sequence, bool forceFlag ){
+ReturnCode close( Sequence *sequence, bool forceFlag ){
   if(currentlySaved == false){
     return -1;
   } else if(sequence != NULL){

@@ -61,8 +61,8 @@ typedef struct {
   Setup
 =========================
 */
-Sequence* Empty(LineBstd LineBstdToUse); /* Create an empty sequence (i.e. for new empty file)*/
-Sequence* NewSequence( char *file_name ); /* i.e. open a file */
+Sequence* empty(LineBstd LineBstdToUse); /* Create an empty sequence (i.e. for new empty file)*/
+Sequence* newSequence( char *file_name ); /* i.e. open a file */
 LineBstd getCurrentLineBstd(); 
 LineBidentifier getCurrentLineBidentifier(); /* returns '\n' for Linux & MSDOS or '\r' for MAC */
 
@@ -71,8 +71,8 @@ LineBidentifier getCurrentLineBidentifier(); /* returns '\n' for Linux & MSDOS o
   Quit
 =========================
 */
-ReturnCode SaveSequence( char *file_path, Sequence *sequence );
-ReturnCode Close( Sequence *sequence, bool forceFlag ); /* Free all resources of specified sequence, forceFlag: 1 -> Close even if not saved, 0 -> Close only when saved */
+ReturnCode saveSequence( char *file_path, Sequence *sequence );
+ReturnCode close( Sequence *sequence, bool forceFlag ); /* Free all resources of specified sequence, forceFlag: 1 -> Close even if not saved, 0 -> Close only when saved */
 
 /*
 =========================
@@ -86,14 +86,14 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
   Write/Edit
 =========================
 */
-ReturnCode Insert( Sequence *sequence, Position position, wchar_t *textToInsert ); /* textToInsert: nullterminated string of wide chars */
-ReturnCode Delete( Sequence *sequence, Position beginPosition, Position endPosition );
+ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert ); /* textToInsert: nullterminated string of wide chars */
+ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosition );
 
-ReturnCode Copy( Sequence *sequence, Position fromBegin, Position fromEnd, Position toPosition );
-ReturnCode Move( Sequence *sequence, Position fromBegin, Position fromEnd, Position toPosition );
+ReturnCode copy( Sequence *sequence, Position fromBegin, Position fromEnd, Position toPosition );
+ReturnCode move( Sequence *sequence, Position fromBegin, Position fromEnd, Position toPosition );
 
-ReturnCode Undo( Sequence *sequence);
-ReturnCode Redo( Sequence *sequence);
+ReturnCode undo( Sequence *sequence);
+ReturnCode redo( Sequence *sequence);
 
 
 /*

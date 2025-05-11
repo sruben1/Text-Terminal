@@ -22,7 +22,7 @@ LineBidentifier currentLineBidentifier = NONE_ID;
 /*======== operations ========*/
 ReturnCode open_and_setup_file(char* file_path){
     //Open(...); replaces Empty(...)
-    activeSequence = Empty(LINUX);
+    activeSequence = empty(LINUX);
     currentLineBreakStd = getCurrentLineBstd();
     currentLineBidentifier = getCurrentLineBidentifier();
 }
@@ -190,11 +190,11 @@ int main(int argc, char *argv[]){
     DEBG_PRINT("SIZE = %d\n", sizeof(wchar_t));
     
     
-    if(Insert(activeSequence, 0, L"\U0001F6F8 It works!! \n aaa \n 64\n\n") < 0){ //\u0001F6F8 -> expect F0 9F 9B B8
+    if(insert(activeSequence, 0, L"\U0001F6F8 It works!! \n aaa \n 64\n\n") < 0){ //\u0001F6F8 -> expect F0 9F 9B B8
         DEBG_PRINT("Insert returned with error!\n");
     }
     debugPrintInternalState(activeSequence, true,false);
-    if(Insert(activeSequence, 8,L"|new|") < 0){
+    if(insert(activeSequence, 8,L"|new|") < 0){
         DEBG_PRINT("Insert returned with error...");
     }
     debugPrintInternalState(activeSequence, true,false);

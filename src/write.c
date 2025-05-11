@@ -44,7 +44,7 @@ int main() {
     mouseinterval(0);
     mousemask(BUTTON1_CLICKED, NULL);
 
-    Sequence* seq = Empty(LINUX);
+    Sequence* seq = empty(LINUX);
     if (!seq) {
         printf("\033[?1000l");
         endwin();
