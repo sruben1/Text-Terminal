@@ -1,5 +1,5 @@
 #include "guiUtilities.h"
-
+#include "textStructure.h"
 #include "debugUtil.h"
 
 /*
@@ -91,60 +91,93 @@ ReturnCode setAbsoluteLineNumber(int newLineNumber){
  * Function to translate current screen position to (general) absolute atomic index. 
  * >> relativeLine and charColumn require counting form position 0.
  */
-int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence){
-    
-    // Check that request is valid in current data structure state: 
-    for(int i = 0; i <= relativeLine; i++){
-        if (lineStats.absolutePos[i] == -1){
-            ERR_PRINT("Char position translation is beyond currently stored lines!");
-            return -1;
-        }
-    }
-    
-    // quick access case:
-    if(charColumn == 0){
-        return lineStats.absolutePos[relativeLine];
-    } 
-
-    // General case, determine by iterating through chars:
-    Atomic *currentItemBlock = NULL;
-
-    int atomicIndex = 0;
-
-    // Get first block of the line
-    Size size = getItemBlock(sequence, lineStats.absolutePos[relativeLine], &currentItemBlock);
-    if(size < 0){
-        ERR_PRINT("Position determination failed (on first block request).\n");
+int getAbsoluteAtomicIndex(int relativeLine, int targetCharColumn, Sequence* sequence) {
+    // Validate input
+    if (relativeLine < 0) {
+        ERR_PRINT("Invalid relativeLine: %d\n", relativeLine);
         return -1;
     }
 
-    LineBidentifier lineBidentifier = getCurrentLineBidentifier();
-
-    int charCounter = 0;
-    int blockOffset = 0;
-    while (atomicIndex < charColumn){
-        if(atomicIndex >= size + blockOffset){
-            // get next block
-            size = getItemBlock(sequence, lineStats.absolutePos[relativeLine] + atomicIndex, &currentItemBlock);
-            if(size < 0){
-                ERR_PRINT("Position determination failed (on consecutive block request).\n");
-                return -1;
-            }
-        }
-        DEBG_PRINT("seeking at char: '%c'\n", currentItemBlock[atomicIndex]); 
-        if(currentItemBlock[atomicIndex] == lineBidentifier){
-            // found line end (char)
-            ERR_PRINT("Line shorter then requested column postion!\n");
+    // Ensure absolute positions are computed up to the desired line
+    for (int i = 0; i <= relativeLine; i++) {
+        if (lineStats.absolutePos[i] == -1) {
+            ERR_PRINT("Line %d not available yet.\n", i);
             return -1;
         }
-        if( ((currentItemBlock[atomicIndex] & 0xC0) != 0x80) && (currentItemBlock[atomicIndex] >= 0x20) ){
-            // If start of char UTF-8 char and not a control char:
-            charCounter++;
-        }
-        atomicIndex++;
     }
-    DEBG_PRINT("Seek ended with blockSize = %d, blockOffset = %d, nbr of chars %d\n", size, blockOffset, charCounter);
-    return charCounter;
+
+    Position lineStartAbsolutePos = lineStats.absolutePos[relativeLine];
+
+    // Quick return for column 0
+    if (targetCharColumn == 0) {
+        return lineStartAbsolutePos;
+    }
+
+    Atomic *currentItemBlock = NULL;
+    Size currentBlockSize = 0;
+    Position currentAbsolutePos = lineStartAbsolutePos;
+    int charsCounted = 0;
+    int bytesConsumedInLine = 0;
+
+    LineBidentifier lineBidentifier = getCurrentLineBidentifier();
+
+    // Count characters until the target column is reached
+    while (charsCounted < targetCharColumn) {
+        currentBlockSize = getItemBlock(sequence, currentAbsolutePos, &currentItemBlock);
+        if (currentBlockSize <= 0 || currentItemBlock == NULL) {
+            DEBG_PRINT("Reached end of sequence at pos %lld.\n", (long long)currentAbsolutePos);
+            return currentAbsolutePos;
+        }
+
+        int blockRelativeOffset = 0;
+        while (blockRelativeOffset < currentBlockSize && charsCounted < targetCharColumn) {
+            Atomic firstByte = currentItemBlock[blockRelativeOffset];
+
+            // Stop at line break
+            if (firstByte == lineBidentifier) {
+                DEBG_PRINT("Line break at pos %lld.\n", (long long)currentAbsolutePos);
+                return currentAbsolutePos;
+            }
+
+            // Determine UTF-8 character length
+            int charByteLength = 0;
+            if ((firstByte & 0x80) == 0) charByteLength = 1;
+            else if ((firstByte & 0xE0) == 0xC0) charByteLength = 2;
+            else if ((firstByte & 0xF0) == 0xE0) charByteLength = 3;
+            else if ((firstByte & 0xF8) == 0xF0) charByteLength = 4;
+            else {
+                ERR_PRINT("Invalid UTF-8 byte: 0x%02X at pos %lld.\n", firstByte, (long long)currentAbsolutePos);
+                currentAbsolutePos++;
+                bytesConsumedInLine++;
+                blockRelativeOffset++;
+                continue;
+            }
+
+            // If character is incomplete, fetch next block
+            if (blockRelativeOffset + charByteLength > currentBlockSize) {
+                break;
+            }
+
+            // Count printable characters (and tabs)
+            if (firstByte >= 0x20 || firstByte == '\t') {
+                charsCounted++;
+            }
+
+            currentAbsolutePos += charByteLength;
+            bytesConsumedInLine += charByteLength;
+            blockRelativeOffset += charByteLength;
+
+            if (charsCounted == targetCharColumn) {
+                DEBG_PRINT("Target column %d at pos %lld.\n", targetCharColumn, (long long)currentAbsolutePos);
+                return currentAbsolutePos;
+            }
+        }
+    }
+
+    // Return current position if target wasn't reached (e.g., line too short)
+    DEBG_PRINT("End of loop. Returning pos %lld (got %d chars, target %d).\n",
+               (long long)currentAbsolutePos, charsCounted, targetCharColumn);
+    return currentAbsolutePos;
 }
 
 
