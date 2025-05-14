@@ -3,6 +3,7 @@
 #include <wchar.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 #include "debugUtil.h"
 
@@ -27,7 +28,20 @@ int isContinuationByte(Sequence *sequence, DescriptorNode *node, int offsetInBlo
 int amountOfContinuationBytes(Sequence *sequence, DescriptorNode *node, int offsetInBlock);
 size_t getUtf8ByteSize(const wchar_t* wstr);
 
-/*------ Function Implementations ------*/
+/*
+=========================
+  Setup
+=========================
+*/
+
+
+LineBstd getCurrentLineBstd(){
+  return LINUX;
+}
+LineBidentifier getCurrentLineBidentifier(){
+  return LINUX_MSDOS_ID;
+}
+
 Sequence* empty(LineBstd LineBstdToUse){
   Sequence *newSeq = (Sequence*) malloc(sizeof(Sequence));
   newSeq->pieceTable.first = NULL;
@@ -41,41 +55,48 @@ Sequence* empty(LineBstd LineBstdToUse){
   return newSeq;
 }
 
-LineBstd getCurrentLineBstd(){
-  return LINUX;
-}
-LineBidentifier getCurrentLineBidentifier(){
-  return LINUX_MSDOS_ID;
-}
-
-Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemBlock){
-  if (sequence == NULL || position < 0 || returnedItemBlock == NULL){
-    return -1; // Error
-  }
-  Size size = -1;
+Sequence* loadNewFile( char *pathname ){
   
-  NodeResult nodeResult = getNodeForPosition(sequence, position);
+}
 
-  if (nodeResult.startPosition == -2){
-    // Special case: Position at end of the sequence requested
-    *returnedItemBlock = &endOfTextSignal;
+/*
+=========================
+  Quit
+=========================
+*/
+
+ReturnCode close( Sequence *sequence, bool forceFlag ){
+  if(!forceFlag && currentlySaved == false){
+    return -1;
+  } 
+  if(sequence != NULL){
+    DescriptorNode* curr = sequence->pieceTable.first;
+    while(curr != NULL){
+      DescriptorNode* next = curr->next_ptr;
+      free(curr);
+      curr = next;
+    }
+    free(sequence->fileBuffer.data);
+    free(sequence->addBuffer.data);
+    free(sequence);
+    sequence == NULL;
     return 1;
   }
-
-  DescriptorNode* node = nodeResult.node;
-  if (node != NULL) {
-    int offset = node->offset + (position - nodeResult.startPosition);
-    size = node->size - (position - nodeResult.startPosition);
-
-    if (node->isInFileBuffer){
-      *returnedItemBlock = sequence->fileBuffer.data + offset;
-    } else {
-      *returnedItemBlock = sequence->addBuffer.data + offset;
-    }
-  } 
-
-  return size;
+  return -1;
 }
+
+/*
+=========================
+  (Internal) File I/O:
+=========================
+*/
+
+
+/*
+=========================
+  Internal Utilities:
+=========================
+*/
 
 /**
  * Helper function for traversing the piece table to find the node containing text at a given position. 
@@ -129,6 +150,125 @@ int isContinuationByte(Sequence *sequence, DescriptorNode *node, int offsetInBlo
   return (byte & 0xC0) == 0x80; // Check if the byte is a continuation byte
 }
 
+/**
+ * Reads the byte at a given offset in the node and computes the corresponding number of continuation bytes.
+ * If the byte itself is a continuation byte, it determines the number of continuation bytes that follow it.
+ */
+int amountOfContinuationBytes(Sequence *sequence, DescriptorNode *node, int offsetInBlock) {
+  if (node == NULL || offsetInBlock < 0) {
+    return -1; // Error
+  }
+
+  Atomic *data = node->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+  if (data == NULL) {
+    return -1; // Error
+  }
+  Atomic byte = data[node->offset + offsetInBlock];
+  if (byte >= 240) { // 4-byte character (11110xxx)
+    return 3;
+  } else if (byte >= 224) { // 3-byte character (1110xxxx)
+    return 2;
+  } else if (byte >= 192) { // 2-byte character (110xxxxx)
+    return 1;
+  } else if (byte >= 128) { // continuation byte (10xxxxxx)
+    int amount = 0;
+    // Read until the end of the node or until a non-continuation byte is found
+    for (int i = offsetInBlock + 1; i < node->size; i++) {
+      int result = isContinuationByte(sequence, node, i);
+      if (result == -1) {
+        return -1; // Error
+      } else if (result == 0) {
+        break; // Not a continuation byte
+      }     
+      amount++;
+    }
+    return amount; 
+  } else { // 1-byte character (0xxxxxxx)
+    return 0; 
+  }
+}
+
+size_t getUtf8ByteSize(const wchar_t* wstr) {
+    mbstate_t state = {0};
+    return wcsrtombs(NULL, &wstr, 0, &state);
+}
+
+/* Appends the textToInsert to the add buffer, returns the (offset) Position */
+Position writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert) {
+    if (sequence == NULL || textToInsert == NULL) {
+        return -1; // Error: Invalid input
+    }
+
+    // Get the length of the text's UTF-8 representation in bytes
+    size_t byteLength = getUtf8ByteSize(textToInsert);
+
+    // TODO: Maybe shrink the buffer if it unnecessarily large
+
+    // Double the buffer's capacity if necessary
+    if (sequence->addBuffer.capacity < sequence->addBuffer.size + byteLength) {
+        size_t newCapacity = (sequence->addBuffer.capacity == 0) ? byteLength : sequence->addBuffer.capacity * 2;
+        while (newCapacity < sequence->addBuffer.size + byteLength) {
+            newCapacity *= 2;
+        }
+
+        char *newData = realloc(sequence->addBuffer.data, newCapacity);
+        if (newData == NULL) {
+            return -1; // Error: Memory allocation failed
+        }
+
+        sequence->addBuffer.data = newData;
+        sequence->addBuffer.capacity = newCapacity;
+    }
+
+    // Write the UTF-8 string to the end of the add buffer
+    int offset = (int) sequence->addBuffer.size;
+    wcstombs(sequence->addBuffer.data + sequence->addBuffer.size, textToInsert, byteLength);
+    sequence->addBuffer.size += byteLength;
+
+    return (Position) offset;
+}
+
+/*
+=========================
+  Read
+=========================
+*/
+
+Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemBlock){
+  if (sequence == NULL || position < 0 || returnedItemBlock == NULL){
+    return -1; // Error
+  }
+  Size size = -1;
+  
+  NodeResult nodeResult = getNodeForPosition(sequence, position);
+
+  if (nodeResult.startPosition == -2){
+    // Special case: Position at end of the sequence requested
+    *returnedItemBlock = &endOfTextSignal;
+    return 1;
+  }
+
+  DescriptorNode* node = nodeResult.node;
+  if (node != NULL) {
+    int offset = node->offset + (position - nodeResult.startPosition);
+    size = node->size - (position - nodeResult.startPosition);
+
+    if (node->isInFileBuffer){
+      *returnedItemBlock = sequence->fileBuffer.data + offset;
+    } else {
+      *returnedItemBlock = sequence->addBuffer.data + offset;
+    }
+  } 
+
+  return size;
+}
+
+/*
+=========================
+  Write/Edit
+=========================
+*/
+
 ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert ){
   if (sequence == NULL || textToInsert == NULL || position < 0){
     return -1; // Error
@@ -151,7 +291,7 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
   newInsert->offset = newlyWrittenBufferOffset;
   newInsert->size = (long int) getUtf8ByteSize(textToInsert);
 
-  // Seperately handle insertion at the beginning of the sequence
+  // Separately handle insertion at the beginning of the sequence
   if (position == 0){
     DEBG_PRINT("Insert at beginning of sequence.\n");
     newInsert->next_ptr = sequence->pieceTable.first; // Potentially NULL for empty sequence
@@ -310,94 +450,11 @@ ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosit
   return 1;
 }
 
-/**
- * Reads the byte at a given offset in the node and computes the corresponding number of continuation bytes.
- * If the byte itself is a continuation byte, it determines the number of continuation bytes that follow it.
- */
-int amountOfContinuationBytes(Sequence *sequence, DescriptorNode *node, int offsetInBlock) {
-  if (node == NULL || offsetInBlock < 0) {
-    return -1; // Error
-  }
-
-  Atomic *data = node->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
-  if (data == NULL) {
-    return -1; // Error
-  }
-  Atomic byte = data[node->offset + offsetInBlock];
-  if (byte >= 240) { // 4-byte character (11110xxx)
-    return 3;
-  } else if (byte >= 224) { // 3-byte character (1110xxxx)
-    return 2;
-  } else if (byte >= 192) { // 2-byte character (110xxxxx)
-    return 1;
-  } else if (byte >= 128) { // continuation byte (10xxxxxx)
-    int amount = 0;
-    // Read until the end of the node or until a non-continuation byte is found
-    for (int i = offsetInBlock + 1; i < node->size; i++) {
-      int result = isContinuationByte(sequence, node, i);
-      if (result == -1) {
-        return -1; // Error
-      } else if (result == 0) {
-        break; // Not a continuation byte
-      }     
-      amount++;
-    }
-    return amount; 
-  } else { // 1-byte character (0xxxxxxx)
-    return 0; 
-  }
-}
-
-/* Appends the textToInsert to the add buffer, returns the (offset) Position */
-Position writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert) {
-    if (sequence == NULL || textToInsert == NULL) {
-        return -1; // Error: Invalid input
-    }
-
-    // Get the length of the text's UTF-8 representation in bytes
-    size_t byteLength = getUtf8ByteSize(textToInsert);
-
-    // TODO: Maybe shrink the buffer if it unnecessarily large
-
-    // Double the buffer's capacity if necessary
-    if (sequence->addBuffer.capacity < sequence->addBuffer.size + byteLength) {
-        size_t newCapacity = (sequence->addBuffer.capacity == 0) ? byteLength : sequence->addBuffer.capacity * 2;
-        while (newCapacity < sequence->addBuffer.size + byteLength) {
-            newCapacity *= 2;
-        }
-
-        char *newData = realloc(sequence->addBuffer.data, newCapacity);
-        if (newData == NULL) {
-            return -1; // Error: Memory allocation failed
-        }
-
-        sequence->addBuffer.data = newData;
-        sequence->addBuffer.capacity = newCapacity;
-    }
-
-    // Write the UTF-8 string to the end of the add buffer
-    int offset = (int) sequence->addBuffer.size;
-    wcstombs(sequence->addBuffer.data + sequence->addBuffer.size, textToInsert, byteLength);
-    sequence->addBuffer.size += byteLength;
-
-    return (Position) offset;
-}
-
-ReturnCode close( Sequence *sequence, bool forceFlag ){
-  if(currentlySaved == false){
-    return -1;
-  } else if(sequence != NULL){
-    DescriptorNode* curr = sequence->pieceTable.first;
-    while(curr != NULL){
-      DescriptorNode* next = curr->next_ptr;
-      free(curr);
-      curr = next;
-    }
-    return 1;
-  }
-  return -1;
-}
-
+/*
+=============
+  Debug Utils
+=============
+*/
 
 void debugPrintInternalState(Sequence* sequence, bool showAddBuff, bool showFileBuff){
   if(sequence->addBuffer.data != NULL){
@@ -444,11 +501,4 @@ void debugPrintInternalState(Sequence* sequence, bool showAddBuff, bool showFile
     }
     DEBG_PRINT("\n\n");
   }
-}
-
-
-
-size_t getUtf8ByteSize(const wchar_t* wstr) {
-    mbstate_t state = {0};
-    return wcsrtombs(NULL, &wstr, 0, &state);
 }

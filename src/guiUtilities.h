@@ -60,7 +60,7 @@ ReturnCode setAbsoluteLineNumber(int newLineNumber);
 
 /** 
  * Function that returns a wChar string with L'\0' terminator. 
- * >> sizeToPass == last parsed index of itemArray **+1**.
+ * >> sizeToParse == last parsed index of itemArray **+1**.
  * >> precomputedWCharCount == nbr of wChars without the here added null terminator.
  */
 wchar_t* utf8_to_wchar(const Atomic* itemArray, int sizeToParse, int precomputedWCharCount);
