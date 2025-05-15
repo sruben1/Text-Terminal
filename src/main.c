@@ -3,10 +3,12 @@
 #include <locale.h> // To specify that the utf-8 standard is used 
 #include <wchar.h> // UTF-8, wide char hnadling
 #include <stdbool.h> //Easy boolean support
+#include <sys/resource.h> // Allows to query system's specific properties 
 
 #include "textStructure.h" // Interface to the central text datastructure 
 #include "guiUtilities.h" // Some utility backend used for the GUI
 #include "debugUtil.h" // For easy managmenet of logger and error messages
+#include "profiler.h" //Custom profiler for easy metrics
 
 /*
 =========================
@@ -22,9 +24,9 @@ LineBidentifier currentLineBidentifier = NONE_ID;
 /*======== operations ========*/
 ReturnCode open_and_setup_file(char* file_path){
     //Open(...); replaces Empty(...)
-    activeSequence = empty(LINUX);
-    currentLineBreakStd = getCurrentLineBstd();
-    currentLineBidentifier = getCurrentLineBidentifier();
+    activeSequence = empty();
+    currentLineBreakStd = LINUX; //getCurrentLineBstd();
+    currentLineBidentifier = LINUX_MSDOS_ID; //getCurrentLineBidentifier();
 }
 
 
@@ -188,20 +190,35 @@ int main(int argc, char *argv[]){
 
     /* Debugging code:*/
     DEBG_PRINT("SIZE = %d\n", sizeof(wchar_t));
+    struct rlimit temp_limit;
+    if (getrlimit(RLIMIT_AS, &temp_limit) == 0) {
+        DEBG_PRINT("Virtual Memory Address space ceiling: %lu\n", temp_limit.rlim_cur);
+    }
     
-    
+    profilerStart();
     if(insert(activeSequence, 0, L"\U0001F6F8 It works!! \n aaa \n 64\n\n") < 0){ //\u0001F6F8 -> expect F0 9F 9B B8
         DEBG_PRINT("Insert returned with error!\n");
     }
-    debugPrintInternalState(activeSequence, true,false);
+    profilerStop("1. Insert");
+    profilerStart();
+    //debugPrintInternalState(activeSequence, true,false);
     if(insert(activeSequence, 8,L"|new|") < 0){
         DEBG_PRINT("Insert returned with error...");
     }
-    debugPrintInternalState(activeSequence, true,false);
+    profilerStop("2. Insert");
+    //debugPrintInternalState(activeSequence, true,false);
     if(0 > getUtfNoControlCharCount(2)){
         DEBG_PRINT("Lines indeed not statistically evaluated (call correctly failed)\n");
     }
+    profilerStart();
+    if(delete(activeSequence, 8,10) < 0){ 
+        DEBG_PRINT("Delete returned with error!\n");
+    }
+    profilerStop("1. Delete");
+    debugPrintInternalState(activeSequence, true, false);   
+    profilerStart();
     print_items_after(0, 20);
+    profilerStop("Debug conversion & print");
     int i = -1;
     if((i = getUtfNoControlCharCount(2)) > 0){
         DEBG_PRINT("Lines now statistically evaluated (call succeeded)\n");

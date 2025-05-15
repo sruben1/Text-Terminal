@@ -3,9 +3,9 @@
 #include <wchar.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 
 #include "debugUtil.h"
+#include "fileManager.h" // Handles all file operations
 
 /*------ Data structures for internal use ------*/
 typedef struct {
@@ -17,7 +17,7 @@ typedef struct {
 /*------ Variables for internal use ------*/
 static LineBstd _currLineB = NO_INIT;
 static LineBidentifier _currLineBidentifier = NONE_ID;
-static char currentFile[] =  {'\0'};
+static int fdOfCurrentOpenFile = NULL;
 static bool currentlySaved = true;
 static Atomic endOfTextSignal = END_OF_TEXT_CHAR;
 
@@ -42,7 +42,7 @@ LineBidentifier getCurrentLineBidentifier(){
   return LINUX_MSDOS_ID;
 }
 
-Sequence* empty(LineBstd LineBstdToUse){
+Sequence* empty(){
   Sequence *newSeq = (Sequence*) malloc(sizeof(Sequence));
   newSeq->pieceTable.first = NULL;
   newSeq->pieceTable.length = 0;
@@ -55,8 +55,26 @@ Sequence* empty(LineBstd LineBstdToUse){
   return newSeq;
 }
 
-Sequence* loadNewFile( char *pathname ){
-  
+Sequence* loadOrCreateNewFile( char *pathname ){
+  if(fdOfCurrentOpenFile != 0){
+    ERR_PRINT("Error, Close currently open file first!\n");
+    return -1;
+  }
+  _currLineB = initSequenceFromOpenOrCreate(pathname, empty(), &fdOfCurrentOpenFile, LINUX);
+
+  switch (_currLineB){
+    case MSDOS:
+    case LINUX:
+      _currLineBidentifier = LINUX_MSDOS_ID;
+      break;
+    case MAC:
+      _currLineBidentifier = MAC_ID;
+      break;
+    default:
+      _currLineBidentifier = NO_INIT;
+      break;
+  }
+
 }
 
 /*
@@ -65,7 +83,7 @@ Sequence* loadNewFile( char *pathname ){
 =========================
 */
 
-ReturnCode close( Sequence *sequence, bool forceFlag ){
+ReturnCode closeSequence( Sequence *sequence, bool forceFlag ){
   if(!forceFlag && currentlySaved == false){
     return -1;
   } 
@@ -76,6 +94,12 @@ ReturnCode close( Sequence *sequence, bool forceFlag ){
       free(curr);
       curr = next;
     }
+
+    //TODO : free file related resources!
+    munmap(fdOfCurrentOpenFile, sequence->fileBuffer.capacity);
+    close(fdOfCurrentOpenFile);
+       
+
     free(sequence->fileBuffer.data);
     free(sequence->addBuffer.data);
     free(sequence);
@@ -84,13 +108,6 @@ ReturnCode close( Sequence *sequence, bool forceFlag ){
   }
   return -1;
 }
-
-/*
-=========================
-  (Internal) File I/O:
-=========================
-*/
-
 
 /*
 =========================
@@ -489,14 +506,14 @@ void debugPrintInternalState(Sequence* sequence, bool showAddBuff, bool showFile
   }
   if(showAddBuff && sequence->addBuffer.data != NULL){
     DEBG_PRINT("Content of add buffer:\n|");
-    for(int i = 0; i < sequence->addBuffer.size; i++){
+    for(int i = 0; i < (int) sequence->addBuffer.size; i++){
       DEBG_PRINT("%02X|", (uint8_t) sequence->addBuffer.data[i]);
     }
     DEBG_PRINT("\n\n");
   }
   if(showFileBuff && sequence->fileBuffer.data != NULL){
     DEBG_PRINT("Content of file buffer:\n|");
-    for(int i = 0; i < sequence->fileBuffer.size; i++){
+    for(int i = 0; i < (int) sequence->fileBuffer.size; i++){
       DEBG_PRINT("%02X|", (uint8_t) sequence->fileBuffer.data[i]);
     }
     DEBG_PRINT("\n\n");

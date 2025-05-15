@@ -61,8 +61,8 @@ typedef struct {
   Setup
 =========================
 */
-Sequence* empty(LineBstd LineBstdToUse); /* Create an empty sequence (i.e. for new empty file)*/
-Sequence* loadNewFile( char *pathname ); /* i.e. open a file */
+Sequence* empty(); /* Create an empty sequence (i.e. for new empty file)*/
+Sequence* loadOrCreateNewFile( char *pathname ); /* i.e. open a file */
 LineBstd getCurrentLineBstd(); 
 LineBidentifier getCurrentLineBidentifier(); /* returns '\n' for Linux & MSDOS or '\r' for MAC */
 
@@ -72,7 +72,7 @@ LineBidentifier getCurrentLineBidentifier(); /* returns '\n' for Linux & MSDOS o
 =========================
 */
 ReturnCode saveSequence( char *pathname, Sequence *sequence );
-ReturnCode close( Sequence *sequence, bool forceFlag ); /* Free all resources of specified sequence, forceFlag: 1 -> Close even if not saved, 0 -> Close only when saved */
+ReturnCode closeSequence( Sequence *sequence, bool forceFlag ); /* Free all resources of specified sequence, forceFlag: 1 -> Close even if not saved, 0 -> Close only when saved */
 
 /*
 =========================
