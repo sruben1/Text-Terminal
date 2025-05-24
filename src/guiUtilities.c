@@ -122,7 +122,7 @@ int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence)
 
     int charCounter = 0;
     int blockOffset = 0;
-    while (atomicIndex < charColumn){
+    while (charCounter < charColumn){
         if(atomicIndex >= size + blockOffset){
             // get next block
             size = getItemBlock(sequence, lineStats.absolutePos[relativeLine] + atomicIndex, &currentItemBlock);
@@ -131,20 +131,20 @@ int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence)
                 return -1;
             }
         }
-        DEBG_PRINT("seeking at char: '%c'\n", currentItemBlock[atomicIndex]); 
+        DEBG_PRINT("seeking at char%d: '%c'\n", atomicIndex+1, currentItemBlock[atomicIndex +1]); 
         if(currentItemBlock[atomicIndex] == lineBidentifier){
             // found line end (char)
             ERR_PRINT("Line shorter then requested column postion!\n");
             return -1;
         }
-        if( ((currentItemBlock[atomicIndex] & 0xC0) != 0x80) && (currentItemBlock[atomicIndex] >= 0x20) ){
+        if( ((currentItemBlock[atomicIndex + 1] & 0xC0) != 0x80) && (currentItemBlock[atomicIndex  + 1] >= 0x20) ){
             // If start of char UTF-8 char and not a control char:
             charCounter++;
         }
         atomicIndex++;
     }
     DEBG_PRINT("Seek ended with blockSize = %d, blockOffset = %d, nbr of chars %d\n", size, blockOffset, charCounter);
-    return charCounter;
+    return atomicIndex;
 }
 
 
