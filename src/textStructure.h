@@ -31,6 +31,7 @@ typedef enum { LINUX_MSDOS_ID='\n', MAC_ID='\r', NONE_ID='\0'} LineBidentifier;
 typedef struct DescriptorNode DescriptorNode;
 struct DescriptorNode{
   DescriptorNode *next_ptr;
+  DescriptorNode *prev_ptr;
   bool isInFileBuffer;
   unsigned long offset;
   unsigned long size;
@@ -39,6 +40,7 @@ struct DescriptorNode{
 /* Piece table as a linked list */
 typedef struct{
   DescriptorNode *first;
+  DescriptorNode *last; 
   int length;
 } PieceTable;
 

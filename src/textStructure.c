@@ -3,6 +3,7 @@
 #include <wchar.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "debugUtil.h"
 #include "fileManager.h" // Handles all file operations
@@ -10,14 +11,13 @@
 /*------ Data structures for internal use ------*/
 typedef struct {
   DescriptorNode *node;
-  DescriptorNode *prevNode;
   Position startPosition; // position of the block's first character
 } NodeResult;
 
 /*------ Variables for internal use ------*/
 static LineBstd _currLineB = NO_INIT;
 static LineBidentifier _currLineBidentifier = NONE_ID;
-static int fdOfCurrentOpenFile = NULL;
+static int fdOfCurrentOpenFile = 0;
 static bool currentlySaved = true;
 static Atomic endOfTextSignal = END_OF_TEXT_CHAR;
 
@@ -43,8 +43,32 @@ LineBidentifier getCurrentLineBidentifier(){
 }
 
 Sequence* empty(){
+  // Create sequence and sentinel nodes
   Sequence *newSeq = (Sequence*) malloc(sizeof(Sequence));
-  newSeq->pieceTable.first = NULL;
+  DescriptorNode* firstNode = (DescriptorNode*) malloc(sizeof(DescriptorNode));
+  DescriptorNode* lastNode = (DescriptorNode*) malloc(sizeof(DescriptorNode));
+  if(newSeq == NULL || firstNode == NULL || lastNode == NULL){
+    ERR_PRINT("Fatal malloc fail at empty sequence creation!\n");
+    free(newSeq);
+    free(firstNode);
+    free(lastNode);
+    return NULL;
+  }
+  // Set values for the sentinel nodes
+  firstNode->next_ptr = lastNode;
+  firstNode->prev_ptr = NULL;
+  firstNode->isInFileBuffer = false;
+  firstNode->offset = 0;
+  firstNode->size = 0;
+  lastNode->next_ptr = NULL;
+  lastNode->prev_ptr = firstNode;
+  lastNode->isInFileBuffer = false;
+  lastNode->offset = 0;
+  lastNode->size = 0;
+
+  // Set values for the piece table and buffers
+  newSeq->pieceTable.first = firstNode;
+  newSeq->pieceTable.last = lastNode;
   newSeq->pieceTable.length = 0;
   newSeq->fileBuffer.data = NULL;
   newSeq->fileBuffer.size = 0;
@@ -58,9 +82,9 @@ Sequence* empty(){
 Sequence* loadOrCreateNewFile( char *pathname ){
   if(fdOfCurrentOpenFile != 0){
     ERR_PRINT("Error, Close currently open file first!\n");
-    return -1;
+    return NULL;
   }
-  _currLineB = initSequenceFromOpenOrCreate(pathname, empty(), &fdOfCurrentOpenFile, LINUX);
+  // _currLineB = initSequenceFromOpenOrCreate(pathname, empty(), &fdOfCurrentOpenFile, LINUX);
 
   switch (_currLineB){
     case MSDOS:
@@ -96,8 +120,8 @@ ReturnCode closeSequence( Sequence *sequence, bool forceFlag ){
     }
 
     //TODO : free file related resources!
-    munmap(fdOfCurrentOpenFile, sequence->fileBuffer.capacity);
-    close(fdOfCurrentOpenFile);
+    // munmap(fdOfCurrentOpenFile, sequence->fileBuffer.capacity);
+    // close(fdOfCurrentOpenFile);
        
 
     free(sequence->fileBuffer.data);
@@ -119,30 +143,27 @@ ReturnCode closeSequence( Sequence *sequence, bool forceFlag ){
  * Helper function for traversing the piece table to find the node containing text at a given position. 
  */
 NodeResult getNodeForPosition(Sequence *sequence, Position position){
-  NodeResult result = {NULL, NULL, -1};
+  NodeResult result = {NULL, -1};
 
   if (sequence == NULL || position < 0){
     return result; // Error 
   }
 
-  DescriptorNode* curr = sequence->pieceTable.first;
-  DescriptorNode* prev = NULL;
+  DescriptorNode* curr = sequence->pieceTable.first->next_ptr; // Skip sentinel node
   int i = 0;
-  while(curr != NULL){
+  while(curr != sequence->pieceTable.last){
     i += curr->size;
     if (i > position){
       result.node = curr;
-      result.prevNode = prev;
       result.startPosition = i - curr->size;
       break;
     }
-    prev = curr;
     curr = curr->next_ptr;
   }
   
   if (position == i) {
-    result.prevNode = prev;
-    result.startPosition = -2; // Special case: Position at end of the sequence requested
+    result.node = sequence->pieceTable.last; // Special case: Position at end of the sequence requested
+    result.startPosition = i;
   }
   
   return result;
@@ -259,7 +280,7 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
   
   NodeResult nodeResult = getNodeForPosition(sequence, position);
 
-  if (nodeResult.startPosition == -2){
+  if (nodeResult.node == sequence->pieceTable.last) {
     // Special case: Position at end of the sequence requested
     *returnedItemBlock = &endOfTextSignal;
     return 1;
@@ -308,31 +329,31 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
   newInsert->offset = newlyWrittenBufferOffset;
   newInsert->size = (long int) getUtf8ByteSize(textToInsert);
 
-  // Separately handle insertion at the beginning of the sequence
-  if (position == 0){
-    DEBG_PRINT("Insert at beginning of sequence.\n");
-    newInsert->next_ptr = sequence->pieceTable.first; // Potentially NULL for empty sequence
-    sequence->pieceTable.first = newInsert;
-    sequence->pieceTable.length += 1;
-    return 1;
-  }
-
-  // Otherwise find the node for the given position
+  // Find the node for the given position
   NodeResult nodeResult = getNodeForPosition(sequence, position);
+  DEBG_PRINT("Node for position %d found at start position %d.\n", position, nodeResult.startPosition);
 
   // Insert the new node into the piece table
-  if (nodeResult.startPosition == -2 || nodeResult.startPosition == position){
+  if (nodeResult.startPosition == position){
     // Position is at already existing piece table split
     DEBG_PRINT("Insert at already existing piece table split.\n");
 
-    DescriptorNode* prev = nodeResult.prevNode;
+    DescriptorNode* next = nodeResult.node;
+    if (next == NULL) {
+      ERR_PRINT("Fatal error: next node is NULL!\n");
+      free(newInsert);
+      return -1; // Error: Invalid state
+    }
+    DescriptorNode* prev = next->prev_ptr;
     if (prev == NULL) {
-      ERR_PRINT("Fatal error: prev node is NULL!\n");
+      ERR_PRINT("Fatal error: previous node is NULL!\n");
       free(newInsert);
       return -1; // Error: Invalid state
     }
     prev->next_ptr = newInsert;
-    newInsert->next_ptr = nodeResult.node; // also works at end of table => nodeResult.node == NULL
+    newInsert->next_ptr = next;
+    newInsert->prev_ptr = prev;
+    next->prev_ptr = newInsert;
     sequence->pieceTable.length += 1;
 
   } else {
@@ -340,33 +361,41 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
     DEBG_PRINT("Insert within an existing piece.\n");
 
     // Split the existing node into two parts
-    DescriptorNode* firstPart = nodeResult.node;
-    if (firstPart == NULL){
-      ERR_PRINT("Fatal error: first part node is NULL!\n");
+    DescriptorNode* foundNode = nodeResult.node;
+    if (foundNode == NULL){
+      ERR_PRINT("Fatal error: found node is NULL!\n");
       free(newInsert);
-      return -1;
+      return -1; // Error: Invalid state
     }
     int distanceInBlock = position - nodeResult.startPosition;
-    if (isContinuationByte(sequence, firstPart, distanceInBlock) != 0){
+    if (isContinuationByte(sequence, foundNode, distanceInBlock) != 0){
       ERR_PRINT("Insert failed: Attempted split at continuation byte!\n");
       free(newInsert);
       return -1;
     }
+    DescriptorNode* firstPart = (DescriptorNode*) malloc(sizeof(DescriptorNode)); 
     DescriptorNode* seccondPart = (DescriptorNode*) malloc(sizeof(DescriptorNode)); 
-    if (seccondPart == NULL){
+    if (firstPart == NULL || seccondPart == NULL){
       ERR_PRINT("Fatal malloc fail at insert operation!\n");
       free(newInsert);
       return -1;
     }
-    seccondPart->isInFileBuffer = firstPart->isInFileBuffer;
-    seccondPart->size = firstPart->size - distanceInBlock; // set size as inverse of first part.
-    seccondPart->offset = firstPart->offset + distanceInBlock;
+    firstPart->isInFileBuffer = foundNode->isInFileBuffer;
+    firstPart->offset = foundNode->offset;
     firstPart->size = distanceInBlock;
+    seccondPart->isInFileBuffer = foundNode->isInFileBuffer;
+    seccondPart->size = foundNode->size - distanceInBlock; // set size as inverse of first part.
+    seccondPart->offset = foundNode->offset + distanceInBlock;
     
     // Update the piece table
-    seccondPart->next_ptr = firstPart->next_ptr;
-    newInsert->next_ptr = seccondPart;
     firstPart->next_ptr = newInsert;
+    firstPart->prev_ptr = foundNode->prev_ptr;
+    foundNode->prev_ptr->next_ptr = firstPart;
+    newInsert->next_ptr = seccondPart;
+    newInsert->prev_ptr = firstPart;
+    seccondPart->next_ptr = foundNode->next_ptr;
+    seccondPart->prev_ptr = newInsert;
+    foundNode->next_ptr->prev_ptr = seccondPart;
     sequence->pieceTable.length += 2;
   }
 
@@ -383,7 +412,8 @@ ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosit
   NodeResult endNodeResult = getNodeForPosition(sequence, endPosition);
   DescriptorNode* startNode = startNodeResult.node;
   DescriptorNode* endNode = endNodeResult.node;
-  if (startNode == NULL || endNode == NULL){
+  if (startNode == NULL || startNode == sequence->pieceTable.last 
+    || endNode == NULL || endNode == sequence->pieceTable.last) {
     ERR_PRINT("Fatal error: No node found at given position!\n");
     return -1;
   }
@@ -396,29 +426,13 @@ ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosit
     return -1;
   }
 
-  if (startNode == endNode){
-    // Deleting within a single node => split it into two nodes by creating a new node at the end position
-    DEBG_PRINT("Delete within a single node.\n");
-    DescriptorNode* newNode = (DescriptorNode*) malloc(sizeof(DescriptorNode));
-    if (newNode == NULL){
-      ERR_PRINT("Fatal malloc fail at delete operation!\n");
-      return -1;
-    }
-    newNode->isInFileBuffer = startNode->isInFileBuffer;
-    newNode->offset = endNode->offset + distanceInEndBlock;
-    newNode->size = endNode->size - distanceInEndBlock;
-    newNode->next_ptr = startNode->next_ptr;
-    distanceInEndBlock = 0;
+  DEBG_PRINT("startNode: %d\n", startNode->offset);
+  DEBG_PRINT("endNode: %d\n", endNode->offset);
 
-    startNode->size = distanceInEndBlock;
-    startNode->next_ptr = newNode;
-    sequence->pieceTable.length += 1;
-    endNode = newNode; 
-  } else {
-    // Deleting across multiple nodes => delete nodes in between
-    DEBG_PRINT("Delete across multiple nodes.\n");
+  // TODO: Save the nodes for undo instead of deleting them immediately
+  if (startNode != endNode) {
     DescriptorNode* curr = startNode->next_ptr;
-    while (curr != NULL && curr != endNode) {
+    while (curr != endNode) {
       DescriptorNode* next = curr->next_ptr;
       free(curr);
       curr = next;
@@ -426,43 +440,49 @@ ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosit
     }
   }
 
-  // Adjust the node at the end position
-  if (distanceInEndBlock + 1 == endNode->size) {
-    // Deletion includes last character of endNode => use next node instead
-    DEBG_PRINT("Delete includes last character of endNode.\n");
-    DescriptorNode* nextNode = endNode->next_ptr;
-    free(endNode); 
-    endNode = nextNode; 
+  DescriptorNode* newStartNode;
+  if (distanceInStartBlock == 0) { 
+    // Deletion includes the first character of the start node => use previous node instead
+    newStartNode = startNode->prev_ptr;
+    // TODO: Add startNode to undo stack
     sequence->pieceTable.length -= 1;
   } else {
-    // Deletion does not include last character of endNode
-    DEBG_PRINT("Delete does not include last character of endNode.\n");
-    endNode->offset += distanceInEndBlock + 1;
-    endNode->size -= distanceInEndBlock + 1;
-  }
-  
-  // Adjust the node at the start position
-  if (distanceInStartBlock == 0) {
-    // Deletion includes first character of startNode => use previous node instead
-    DEBG_PRINT("Delete includes first character of startNode.\n");
-    free(startNode);
-    sequence->pieceTable.length -= 1;
-    DescriptorNode* prevNode = startNodeResult.prevNode;
-    if (prevNode != NULL) {
-      prevNode->next_ptr = endNode;
-    } else if (sequence->pieceTable.first == startNode) {
-      // If startNode is the first node, update the piece table's first pointer
-      sequence->pieceTable.first = endNode;
-    } else {
-      ERR_PRINT("Fatal error: prev node is NULL!\n");
+    // Create a new node which includes everything up to the beginning of the deletion
+    newStartNode = (DescriptorNode*) malloc(sizeof(DescriptorNode));
+    if (newStartNode == NULL) {
+      ERR_PRINT("Fatal malloc fail at delete operation!\n");
       return -1;
     }
-  } else {
-    // Deletion does not include first character of startNode
-    DEBG_PRINT("Delete does not include first character of startNode.\n");
-    startNode->size = distanceInStartBlock;
-    startNode->next_ptr = endNode;
+    newStartNode->isInFileBuffer = startNode->isInFileBuffer;
+    newStartNode->offset = startNode->offset;
+    newStartNode->size = distanceInStartBlock;
+    newStartNode->prev_ptr = startNode->prev_ptr;
+    startNode->prev_ptr->next_ptr = newStartNode;
+    startNode = newStartNode; 
   }
+  
+  DescriptorNode* newEndNode;
+  if (distanceInEndBlock + 1 == endNode->size) { 
+    // Deletion includes the last character of the end node => use next node instead
+    newEndNode = endNode->next_ptr;
+    // TODO: Add endNode to undo stack
+    sequence->pieceTable.length -= 1;
+  } else {
+    // Create a new node which includes everything after the end of the deletion
+    newEndNode = (DescriptorNode*) malloc(sizeof(DescriptorNode));
+    if (newEndNode == NULL) {
+      ERR_PRINT("Fatal malloc fail at delete operation!\n");
+      return -1;
+    }
+    newEndNode->isInFileBuffer = endNode->isInFileBuffer;
+    newEndNode->offset = endNode->offset + distanceInEndBlock + 1;
+    newEndNode->size = endNode->size - distanceInEndBlock - 1;
+    newEndNode->next_ptr = endNode->next_ptr;
+    endNode->next_ptr->prev_ptr = newEndNode;
+  }
+
+  newStartNode->next_ptr = newEndNode; 
+  newEndNode->prev_ptr = newStartNode;
   
   return 1;
 }
