@@ -109,7 +109,7 @@ int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence)
     // General case, determine by iterating through chars:
     Atomic *currentItemBlock = NULL;
 
-    int atomicIndex = 0;
+    int atomicIndex = 1; // Set to one, since 0-th position case already handled. 
 
     // Get first block of the line
     Size size = getItemBlock(sequence, lineStats.absolutePos[relativeLine], &currentItemBlock);
@@ -123,28 +123,31 @@ int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence)
     int charCounter = 0;
     int blockOffset = 0;
     while (charCounter < charColumn){
-        if(atomicIndex >= size + blockOffset){
+        if(atomicIndex >= size){
             // get next block
-            size = getItemBlock(sequence, lineStats.absolutePos[relativeLine] + atomicIndex, &currentItemBlock);
+            blockOffset += atomicIndex;
+            size = getItemBlock(sequence, lineStats.absolutePos[relativeLine] + blockOffset, &currentItemBlock);
+            DEBG_PRINT("Seeking in next block, has size: %d\n", (int) size);
+            atomicIndex = 0;
             if(size < 0){
                 ERR_PRINT("Position determination failed (on consecutive block request).\n");
                 return -1;
             }
         }
-        DEBG_PRINT("seeking at char%d: '%c'\n", atomicIndex+1, currentItemBlock[atomicIndex +1]); 
+        DEBG_PRINT("seeking at char%d: '%c'\n", atomicIndex, currentItemBlock[atomicIndex]); 
         if(currentItemBlock[atomicIndex] == lineBidentifier){
             // found line end (char)
             ERR_PRINT("Line shorter then requested column postion!\n");
             return -1;
         }
-        if( ((currentItemBlock[atomicIndex + 1] & 0xC0) != 0x80) && (currentItemBlock[atomicIndex  + 1] >= 0x20) ){
+        if( ((currentItemBlock[atomicIndex] & 0xC0) != 0x80) && (currentItemBlock[atomicIndex] >= 0x20) ){
             // If start of char UTF-8 char and not a control char:
             charCounter++;
         }
         atomicIndex++;
     }
     DEBG_PRINT("Seek ended with blockSize = %d, blockOffset = %d, nbr of chars %d\n", size, blockOffset, charCounter);
-    return atomicIndex;
+    return atomicIndex + blockOffset -1;
 }
 
 
