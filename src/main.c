@@ -458,7 +458,7 @@ void process_input(void) {
         }
     } 
     else if (status == OK) {
-        // Regular character input - now with full Unicode support
+        // Regular character input 
         if (is_printable_unicode(wch) && activeSequence != NULL) {
             // Get position for insertion
             int atomicPos = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
