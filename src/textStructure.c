@@ -287,6 +287,7 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
 */
 
 ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert ){
+  DEBG_PRINT("[Trace]: Inserting at atomic:%d\n",position);
   if (sequence == NULL || textToInsert == NULL || position < 0){
     return -1; // Error
   }
