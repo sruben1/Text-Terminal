@@ -38,6 +38,19 @@ int getGeneralLineNbr(int lineNbrOnScreen){
 }
 
 /**
+ * Returns the quantity of lines currently stored in line stats system.
+ */
+int getTotalAmountOfRelativeLines(){
+    int i = 0;
+    for(; i <= 75; i++){ // Hard coded internal limit at 75
+        if (lineStats.absolutePos[i] == -1){
+            return i;
+        }
+    }
+    return i;
+}
+
+/**
  * Returns the number of Utf-8 chars in a given line, the line number requires counting from 0.
  */
 int getUtfNoControlCharCount(int relativeLine){
@@ -92,7 +105,7 @@ ReturnCode setAbsoluteLineNumber(int newLineNumber){
  * >> relativeLine and charColumn require counting form position 0.
  */
 int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence){
-    
+    DEBG_PRINT("Calculating abs atomic index for: line%d, column%d...\n", relativeLine, charColumn);
     // Check that request is valid in current data structure state: 
     for(int i = 0; i <= relativeLine; i++){
         if (lineStats.absolutePos[i] == -1){
@@ -101,56 +114,53 @@ int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence)
         }
     }
     
-    // Quick access case: if column is 0, return start of line
+    // quick access case:
     if(charColumn == 0){
         return lineStats.absolutePos[relativeLine];
     } 
 
-    // General case: scan from line start to find the position
-    Position lineStart = lineStats.absolutePos[relativeLine];
-    Position currentPos = lineStart;
-    int charsSeen = 0;
-    
+    // General case, determine by iterating through chars:
+    Atomic *currentItemBlock = NULL;
+
+    int atomicIndex = 1; // Set to one, since 0-th position case already handled. 
+
+    // Get first block of the line
+    Size size = getItemBlock(sequence, lineStats.absolutePos[relativeLine], &currentItemBlock);
+    if(size < 0 || currentItemBlock[atomicIndex] == END_OF_TEXT_CHAR){
+        ERR_PRINT("Position determination failed (on first block request).\n");
+        return -1;
+    }
+
     LineBidentifier lineBidentifier = getCurrentLineBidentifier();
-    
-    while(charsSeen < charColumn) {
-        Atomic* currentItemBlock = NULL;
-        Size blockSize = getItemBlock(sequence, currentPos, &currentItemBlock);
-        
-        if(blockSize <= 0 || currentItemBlock == NULL){
-            ERR_PRINT("Failed to get block at position %d\n", (int)currentPos);
-            return -1;
-        }
-        
-        // Find position within this block
-        for(int blockOffset = 0; blockOffset < blockSize; blockOffset++) {
-            Atomic currentChar = currentItemBlock[blockOffset];
-            
-            // Check for line end
-            if(currentChar == lineBidentifier || currentChar == '\n' || currentChar == END_OF_TEXT_CHAR){
-                ERR_PRINT("Line shorter than requested column position! (found line end at char %d, requested %d)\n", 
-                         charsSeen, charColumn);
+
+    int charCounter = 0;
+    int blockOffset = 0;
+    while (charCounter < charColumn){
+        if(atomicIndex >= size){
+            // get next block
+            blockOffset += atomicIndex;
+            size = getItemBlock(sequence, lineStats.absolutePos[relativeLine] + blockOffset, &currentItemBlock);
+            atomicIndex = 0;
+            if(size < 0 || currentItemBlock[atomicIndex] == END_OF_TEXT_CHAR){
+                ERR_PRINT("Position determination failed (on consecutive block request).\n");
                 return -1;
             }
-            
-            // Count displayable UTF-8 characters
-            if( ((currentChar & 0xC0) != 0x80) && (currentChar >= 0x20) ){
-                if(charsSeen == charColumn) {
-                    return currentPos + blockOffset;
-                }
-                charsSeen++;
-            }
-            
-            // If this is the position we want, return it
-            if(charsSeen == charColumn) {
-                return currentPos + blockOffset + 1;
-            }
+            DEBG_PRINT("Seeking in next block, has size: %d\n", (int) size);
         }
-        
-        currentPos += blockSize;
+        DEBG_PRINT("seeking at char%d: '%c'\n", atomicIndex, currentItemBlock[atomicIndex]); 
+        if(currentItemBlock[atomicIndex] == lineBidentifier){
+            // found line end (char)
+            ERR_PRINT("Line shorter then requested column postion!\n");
+            return -1;
+        }
+        if( ((currentItemBlock[atomicIndex] & 0xC0) != 0x80) && (currentItemBlock[atomicIndex] >= 0x20) ){
+            // If start of char UTF-8 char and not a control char:
+            charCounter++;
+        }
+        atomicIndex++;
     }
-    
-    return currentPos;
+    DEBG_PRINT("Seek ended with blockSize = %d, blockOffset = %d, nbr of chars %d\n", size, blockOffset, charCounter);
+    return atomicIndex + blockOffset -1;
 }
 
 /*
@@ -174,6 +184,7 @@ wchar_t* utf8_to_wchar(const Atomic* itemArray, int sizeToParse, int precomputed
 
     if (!wStrToReturn){
         ERR_PRINT("Failed to allocate memory for Wstr!\n");
+        DEBG_PRINT("ERRORRR\n");
         return NULL;
     }
 
@@ -184,12 +195,12 @@ wchar_t* utf8_to_wchar(const Atomic* itemArray, int sizeToParse, int precomputed
     size_t atomicIndx = 0;
     size_t destIndx = 0;
     
-    //DEBG_PRINT("Bool: %d\n", (((int)atomicIndx) < sizeToParse) && (((int)destIndx) < precomputedWCharCount));
+    DEBG_PRINT("Bool: %d\n", (((int)atomicIndx) < sizeToParse) && (((int)destIndx) < precomputedWCharCount));
     while((((int)atomicIndx) < sizeToParse) && (((int)destIndx) < precomputedWCharCount)){
-        //DEBG_PRINT("Trying to parse\n");
-        //DEBG_PRINT("Current parser byte: %02x\n", (uint8_t) itemArray[(int)atomicIndx]);
+        DEBG_PRINT("Trying to parse\n");
+        DEBG_PRINT("Current parser byte: %02x\n", (uint8_t) itemArray[(int)atomicIndx]);
         size_t lenOfCurrentParse = mbrtowc(&wStrToReturn[(int)destIndx], (const char*) &itemArray[(int)atomicIndx], sizeToParse - atomicIndx, &state);
-        //DEBG_PRINT("Got parser size:%d\n", (int) lenOfCurrentParse);
+        DEBG_PRINT("Got parser size:%d\n", (int) lenOfCurrentParse);
         if((int) lenOfCurrentParse == -1){
             ERR_PRINT("Encountered invalid utf-8 char while converting!\n");
             wStrToReturn[destIndx] = L'\uFFFD'; //Insert "unknown" character instead.
