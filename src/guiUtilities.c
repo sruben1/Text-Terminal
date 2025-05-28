@@ -149,6 +149,10 @@ int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence)
         }
         DEBG_PRINT("seeking at char%d: '%c'\n", atomicIndex, currentItemBlock[atomicIndex]); 
         if(currentItemBlock[atomicIndex] == lineBidentifier){
+            if(charCounter + 1 == charColumn){
+                // Requested char column is exactly one position beyond the last element
+                return atomicIndex + blockOffset + 1;
+            }
             // found line end (char)
             ERR_PRINT("Line shorter then requested column postion!\n");
             return -1;

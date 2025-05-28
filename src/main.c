@@ -29,8 +29,7 @@ LineBstd currentLineBreakStd = NO_INIT;
 LineBidentifier currentLineBidentifier = NONE_ID;
 
 static int cursorX = 0, cursorY = 0;
-static Position topLineAtomic = 0;
-static Position lineStartAtomic[1024];
+static Position topLineGeneralNbr = 0;
 bool refreshFlag = true;
 
 static int lastGuiHeight = 0, lastGuiWidth = 0;
@@ -52,8 +51,8 @@ ReturnCode open_and_setup_file(char* file_path){
             return -1;
         }
     }
-    currentLineBreakStd = LINUX;
-    currentLineBidentifier = LINUX_MSDOS_ID;
+    currentLineBreakStd = LINUX;//getCurrentLineBstd();
+    currentLineBidentifier = LINUX_MSDOS_ID;//getCurrentLineBidentifier();
     return 1;
 }
 
@@ -63,148 +62,80 @@ ReturnCode open_and_setup_file(char* file_path){
 =========================
 */
 
-/* Fixed and improved version of print_items_after */
+/* Prints at most the requested number of following lines including the utf-8 char at "firstAtomic". Return code 1: single block accessed; code 2: multiple blocks accessed */
 ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
     DEBG_PRINT("[Trace] : in print function\n");
-    
-    // Critical safety checks
-    if (activeSequence == NULL) {
-        ERR_PRINT("activeSequence is NULL in print_items_after\n");
+    if ( activeSequence == NULL || currentLineBreakStd == NO_INIT || currentLineBidentifier == NONE_ID ){
+        ERR_PRINT("Internal state not ready for printing... bool '1' if issue at: %d>linbStd, %d>lineBident, %d>sequence\n\n", currentLineBreakStd == NO_INIT, currentLineBidentifier == NONE_ID, activeSequence == NULL);
         return -1;
     }
-    if (currentLineBreakStd == NO_INIT) {
-        ERR_PRINT("currentLineBreakStd not initialized\n");
-        return -1;
-    }
-    if (currentLineBidentifier == NONE_ID) {
-        ERR_PRINT("currentLineBidentifier not initialized\n");
-        return -1;
-    }
-    if (nbrOfLines <= 0) {
-        DEBG_PRINT("No lines to print (nbrOfLines = %d)\n", nbrOfLines);
-        return 1;
-    }
-    
     int currLineBcount = 0;
-    Position currentPos = firstAtomic;
+    bool requestNextBlock = false;
+    int size = -1;
 
-    while(currLineBcount < nbrOfLines){
-        // Prevent array overflow in lineStats
-        if (currLineBcount >= 75) {
-            DEBG_PRINT("Reached maximum lines limit (75), stopping render\n");
-            break;
-        }
-        
-        DEBG_PRINT("[Trace] : processing line %d at position %d\n", currLineBcount, (int)currentPos);
-        
+    //In order to ensure porting line variables for if split over multiple blocks:
+    int atomicsInLine = 0; // not an index! (+1 generally) 
+    int nbrOfUtf8CharsInLine = 0;
+    int nbrOfUtf8CharsNoControlCharsInLine = 0; // If we want to ignore line breaks.
+    int frozenLineStart = 0; // Stays set until line break or end of text for statistics
+
+    while( currLineBcount < nbrOfLines ){
+        DEBG_PRINT("[Trace] : in main while loop, %p %d %d \n", activeSequence, currentLineBreakStd, currentLineBidentifier);
         Atomic* currentItemBlock = NULL;
-        Size size = getItemBlock(activeSequence, currentPos, &currentItemBlock);
-        
-        if(size <= 0 || currentItemBlock == NULL){
-            // Check if we've reached end of text
-            if (currentItemBlock != NULL && *currentItemBlock == END_OF_TEXT_CHAR) {
-                DEBG_PRINT("Reached end of text\n");
-                // Update line stats for empty line and break
-                updateLine(currLineBcount, currentPos, 0);
-                break;
+        if(requestNextBlock){
+            DEBG_PRINT("[Trace] : Consecutive block requested\n");
+            firstAtomic = firstAtomic + size; // since size == last index +1 no additional +1 needed.
+            frozenLineStart = firstAtomic;
+            size = (int) getItemBlock(activeSequence, firstAtomic, &currentItemBlock);
+            DEBG_PRINT("The size value %d\n", size);
+            if (size < 0){
+                return 2;
             }
-            DEBG_PRINT("No more blocks available or invalid block\n");
-            break;
-        }
-
-        // Store the start position of this line
-        Position lineStartPos = currentPos;
-        
-        // Process current line from current position
-        int lineLength = 0;
-        int utf8CharCount = 0;
-        int displayableCharCount = 0;
-        Position scanPos = currentPos;
-        bool foundLineEnd = false;
-        
-        // Scan through blocks to find the complete line
-        while(!foundLineEnd) {
-            Atomic* scanBlock = NULL;
-            Size scanSize = getItemBlock(activeSequence, scanPos, &scanBlock);
-            
-            if(scanSize <= 0 || scanBlock == NULL) {
-                break;
-            }
-            
-            // Scan this block for the line end
-            for(int i = 0; i < scanSize; i++) {
-                Atomic currentChar = scanBlock[i];
-                
-                // Check for end of text
-                if (currentChar == END_OF_TEXT_CHAR) {
-                    foundLineEnd = true;
-                    break;
-                }
-                
-                // Count UTF-8 characters
-                if((currentChar & 0xC0) != 0x80){
-                    utf8CharCount++;
-                    if(currentChar >= 0x20){
-                        displayableCharCount++; 
-                    }
-                }
-                
-                lineLength++;
-                
-                // Check for line break
-                if(currentChar == currentLineBidentifier || currentChar == '\n'){
-                    foundLineEnd = true;
-                    break;
-                }
-            }
-            
-            if(!foundLineEnd) {
-                scanPos += scanSize;
-            }
+            requestNextBlock = false;
+        } else{
+            DEBG_PRINT("[Trace] : First block requested\n");
+            size = (int) getItemBlock(activeSequence, firstAtomic, &currentItemBlock);
+            DEBG_PRINT("The size value %d\n", size);
         }
         
-        // Convert line to wide characters for display
-        if (lineLength > 0) {
-            // We need to collect the line data from potentially multiple blocks
-            char* lineData = malloc(lineLength);
-            if(lineData == NULL) {
-                ERR_PRINT("Failed to allocate memory for line data\n");
-                break;
-            }
-            
-            // Collect line data
-            Position collectPos = currentPos;
-            int collected = 0;
-            
-            while(collected < lineLength) {
-                Atomic* collectBlock = NULL;
-                Size collectSize = getItemBlock(activeSequence, collectPos, &collectBlock);
-                
-                if(collectSize <= 0 || collectBlock == NULL) {
-                    break;
-                }
-                
-                int toCopy = (lineLength - collected < collectSize) ? lineLength - collected : collectSize;
-                memcpy(lineData + collected, collectBlock, toCopy);
-                collected += toCopy;
-                collectPos += toCopy;
-            }
-            
-            wchar_t* lineToPrint = utf8_to_wchar((Atomic*)lineData, lineLength, utf8CharCount);
-            free(lineData);
-            
-            if (lineToPrint != NULL) {
-                // Actually render the line to screen
-                int displayRow = currLineBcount;
-                if (displayRow < lastGuiHeight - MENU_HEIGHT) {
-                    mvwaddwstr(stdscr, displayRow, 0, lineToPrint);
-                    // Clear rest of line to handle shorter lines
-                    clrtoeol();
-                }
 
+        if(( size <= 0 ) || ( currentItemBlock == NULL )){DEBG_PRINT("Main error: size value %d\n", size); return -1; }//Error!!
+
+        int currentSectionStart = 0; //i.e. offset of nbr of Items form pointer start
+        int offsetCounter = 0; //i.e. RUNNING offset of nbr of Items form currentSectionStart
+        int nbrOfUtf8Chars = 0;
+        int nbrOfUtf8CharsNoControlChars = 0; // If we want to ignore line breaks.
+
+        while((currLineBcount < nbrOfLines) && !requestNextBlock){
+            DEBG_PRINT("handling atomic at index: %d, is : '%c' \n", (firstAtomic + currentSectionStart + offsetCounter), currentItemBlock[currentSectionStart + offsetCounter]);
+
+            if( (currentItemBlock[currentSectionStart + offsetCounter] & 0xC0) != 0x80 ){
+                // adds +1, if current atomic not == 10xxxxxx (see utf-8 specs):
+                nbrOfUtf8Chars++; 
+
+                if(currentItemBlock[currentSectionStart + offsetCounter] >= 0x20){
+                    // Increase if not an (ASCII) control character:
+                    nbrOfUtf8CharsNoControlChars++; 
+                } 
+            }
+            if((currentItemBlock[currentSectionStart + offsetCounter] == currentLineBidentifier) || ((currentSectionStart+ offsetCounter) == size-1)){
+                DEBG_PRINT("found a line (or at the end of block)! current line count = %d \n", (currLineBcount +1));
+                DEBG_PRINT("Number of UTF-8 chars in this line/end of block = %d \n",  nbrOfUtf8Chars);
+                
+                if( ((currentLineBreakStd == MSDOS) && ((currentSectionStart + offsetCounter) > 0) && (currentItemBlock[currentSectionStart + offsetCounter-1] != '\r'))){ // Might remove if it causes issues, MSDOS should also work if only check for '\n' characters ('\r' then simply not evaluated).
+                    /* Error case, lonely '\n' found despite '\r\n' current standard !*/
+                    ERR_PRINT("Warning case, lonely '\n' found despite \"\r\n\" current standard !\n");
+                }
+                wchar_t* lineToPrint = utf8_to_wchar(&currentItemBlock[currentSectionStart], offsetCounter+1, nbrOfUtf8Chars);
+                if (lineToPrint == NULL){
+                    ERR_PRINT("utf_8 to Wchar conversion failed! ending here!\n");
+                    return -1;
+                }
+                
                 #ifdef DEBUG
-                DEBG_PRINT("Line %d: start_pos=%d, length=%d, utf8chars=%d, displayable=%d\n", 
-                          currLineBcount, (int)lineStartPos, lineLength, utf8CharCount, displayableCharCount);
+                // Basic test print to test backend:
+                DEBG_PRINT("section start = %d, Offset = %d \n", currentSectionStart, offsetCounter);
+                char* textContent = (char*)currentItemBlock;
                 DEBG_PRINT("~~~~~~~~~~~~~~~~~~\n");
                 for (size_t i = 0; lineToPrint[i] != L'\0'; i++) {
                     if(lineToPrint[i] != L'\n'){
@@ -214,69 +145,58 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                     }
                 }
                 DEBG_PRINT("\n~~~~~~~~~~~~~~~~~~\n");
+                for (int i = currentSectionStart; i <= currentSectionStart + offsetCounter; i++) {
+                    DEBG_PRINT("| %02x |", (uint8_t) textContent[i]);
+                }
+                DEBG_PRINT("\n~~~~~~~~~~~~~~~~~~\n");
                 #endif
 
+                if(currentItemBlock[currentSectionStart] != END_OF_TEXT_CHAR){
+                    //print out line or block (could be either!!), interpreted as UTF-8 sequence:atomicsInLine:
+                    DEBG_PRINT(">>>>>>Trying to print: line %d, at column %d\n", currLineBcount, nbrOfUtf8CharsNoControlCharsInLine + 1);
+                    mvwaddwstr(stdscr, currLineBcount, nbrOfUtf8CharsNoControlCharsInLine + 1, lineToPrint);
+                    // TODO: Horizontal scrolling  (i.e.left truncation) and right side truncation needed here as well.
+
+                    // remove all chars that my be left from previous print... -> should not be needed since screen shall be blank each time!
+                    //clrtoeol(); 
+                }
+
+                /* reset&setup for next block/line iteration: */
                 free(lineToPrint);
-            }
-        } else {
-            // Empty line - just clear the screen line
-            if (currLineBcount < lastGuiHeight - MENU_HEIGHT) {
-                move(currLineBcount, 0);
-                clrtoeol();
-            }
-        }
+                if ((currentItemBlock[currentSectionStart + offsetCounter] == currentLineBidentifier) || (currentItemBlock[currentSectionStart + offsetCounter] == END_OF_TEXT_CHAR)){
+                    // handle this blocks line stats:
+                    atomicsInLine += offsetCounter+1;
+                    nbrOfUtf8CharsInLine += nbrOfUtf8Chars;
+                    nbrOfUtf8CharsNoControlCharsInLine += nbrOfUtf8CharsNoControlChars;
+                    // Save in the line stats (from variables) into dedicated management structure:
+                    updateLine(currLineBcount++, currentSectionStart, nbrOfUtf8CharsNoControlCharsInLine);
 
-        // Update line statistics with correct values
-        updateLine(currLineBcount, lineStartPos, displayableCharCount);
-        
-        // Move to next line (skip the line break character if present)
-        currentPos = lineStartPos + lineLength;
-        currLineBcount++;
-    }
-    
-    // Clear any remaining lines on screen
-    for(int i = currLineBcount; i < lastGuiHeight - MENU_HEIGHT; i++) {
-        move(i, 0);
-        clrtoeol();
-    }
-    
+                    DEBG_PRINT("atomicsInLine: %d, nbrOfUtf8CharsInLine: %d, nbrOfUtf8CharsNoControlCharsInLine: %d\n", atomicsInLine, nbrOfUtf8CharsInLine, nbrOfUtf8CharsNoControlCharsInLine);
+                    // Reset variables for next line:
+                    atomicsInLine = 0;
+                    frozenLineStart = currentSectionStart + offsetCounter +1;
+                    nbrOfUtf8CharsInLine = 0;
+                    nbrOfUtf8CharsNoControlCharsInLine = 0;
+                } else{
+                    // Ensure port of line statistics to next block handling (iteration):
+                    atomicsInLine += offsetCounter+1;
+                    nbrOfUtf8CharsInLine += nbrOfUtf8Chars;
+                    nbrOfUtf8CharsNoControlCharsInLine += nbrOfUtf8CharsNoControlChars;
+                    DEBG_PRINT("Ported, current state: atomicsInLine: %d, nbrOfUtf8CharsInLine: %d, nbrOfUtf8CharsNoControlCharsInLine: %d\n", atomicsInLine, nbrOfUtf8CharsInLine, nbrOfUtf8CharsNoControlCharsInLine);
+                }
+                currentSectionStart = currentSectionStart + offsetCounter + 1;
+                offsetCounter = -1;
+                nbrOfUtf8Chars = 0;
+                nbrOfUtf8CharsNoControlChars = 0;
+            }
+            offsetCounter++;
+            if((currentSectionStart + offsetCounter >= size)){
+                DEBG_PRINT("Setting flag for consecutive request\n");
+                requestNextBlock = true;
+            }
+        }   
+	}
     return 1;
-}
-
-/*
-=========================
-  Unicode Helper Functions
-=========================
-*/
-
-/**
- * Check if a wide character is printable (not a control character)
- * This includes all Unicode characters that should be displayed
- */
-bool is_printable_unicode(wint_t wch) {
-    // Basic ASCII printable range
-    if (wch >= 32 && wch <= 126) {
-        return true;
-    }
-    
-    // Extended ASCII and Unicode ranges
-    if (wch >= 160) { // Non-breaking space and above
-        // Exclude some common control character ranges
-        if ((wch >= 0x007F && wch <= 0x009F) ||  // C1 control characters
-            (wch >= 0xFDD0 && wch <= 0xFDEF) ||  // Non-characters
-            (wch >= 0xFFFE && wch <= 0xFFFF)) {  // Non-characters
-            return false;
-        }
-        return true;
-    }
-    
-    // Some additional printable characters in the lower range
-    if (wch == 0x00A0 ||  // Non-breaking space
-        (wch >= 0x00A1 && wch <= 0x00FF)) {  // Latin-1 supplement
-        return true;
-    }
-    
-    return false;
 }
 
 /*
@@ -286,33 +206,28 @@ bool is_printable_unicode(wint_t wch) {
 */
 int main(int argc, char *argv[]){
     DEBG_PRINT("initialized!\n");
+
+    //Setup debugger utility:
+    if (0 > initDebuggerFiles()){
+        //Error case, but ignore since messages already sent...
+    }
     
     // Set UTF-8 locale
     if(setlocale(LC_ALL, "en_US.UTF-8") == NULL){ 
         ERR_PRINT("Fatal error: failed to set LOCALE to UTF-8!\n");
         return 1;
     } 
-    
+
     // Initialize ncurses first
     init_editor();
-    
-    // Initialize the text sequence
-    activeSequence = empty();
-    if (activeSequence == NULL) {
+
+    if (open_and_setup_file("TODO later") < 0) {
         ERR_PRINT("Failed to create empty sequence!\n");
         close_editor();
         return 1;
     }
     
-    // Set up text processing parameters
-    currentLineBreakStd = LINUX;
-    currentLineBidentifier = LINUX_MSDOS_ID;
-    
-    // Initialize line statistics
-    setLineStatsNotUpdated();
-    topLineAtomic = 0;
-    
-    // Initialize line statistics for empty document
+    // Initialize line statistics for first (initial) iteration
     updateLine(0, 0, 0);  // Line 0, at atomic position 0, with 0 characters
     
     // Get initial screen size
@@ -324,19 +239,19 @@ int main(int argc, char *argv[]){
         process_input();
         
         if(refreshFlag){
-            clear(); // Clear screen to prevent artifacts
+            erase(); // Clear screen to prevent artifacts
             
             // Render text if we have valid dimensions
             if (activeSequence != NULL && lastGuiHeight > MENU_HEIGHT) {
                 int linesToRender = lastGuiHeight - MENU_HEIGHT;
                 if (linesToRender > 0) {
-                    print_items_after(topLineAtomic, linesToRender);
+                    print_items_after(topLineGeneralNbr, linesToRender);
                 }
             }
             
             // Draw status line
             if (lastGuiHeight >= MENU_HEIGHT) {
-                mvprintw(lastGuiHeight - 1, 0, "Ln %d, Col %d   Ctrl-Q to quit", cursorY + 1, cursorX + 1);
+                mvprintw(lastGuiHeight - 1, 0, "Ln %d, Col %d   Ctrl-l to quit", cursorY + 1, cursorX + 1);
                 clrtoeol(); // Clear rest of status line
             }
             
@@ -377,6 +292,7 @@ void init_editor(void) {
 }
 
 void close_editor(void) {
+    closeDebuggerFiles;
     endwin();
     if (activeSequence) {
         closeSequence(activeSequence, true); // Force close
@@ -389,6 +305,7 @@ void checkSizeChanged(void){
     getmaxyx(stdscr, new_y, new_x);
 
     if (is_term_resized(lastGuiHeight, lastGuiWidth)){
+        erase();
         resizeterm(new_y, new_x);
         lastGuiHeight = new_y;
         lastGuiWidth = new_x;
@@ -413,8 +330,8 @@ void process_input(void) {
 
     status = get_wch(&wch);
     
-    // Handle Ctrl+Q properly
-    if (status == OK && wch == CTRL_KEY('q')) {
+    // Handle Ctrl+l properly
+    if (status == OK && wch == CTRL_KEY('l')) {// changed to 'l' since issue with VS code not allowing ctrl + q inputs.
         close_editor();
         exit(0);
     }
@@ -423,30 +340,36 @@ void process_input(void) {
         // Function key pressed
         switch (wch){
             case KEY_UP:
+                DEBG_PRINT("[TRACE]:UP\n");
                 if (cursorY > 0) {
+                    DEBG_PRINT("[TRACE]:UP success\n");
                     cursorY--;
                     refreshFlag = true;
                 }
                 break;
                 
             case KEY_DOWN:
-                if (cursorY < lastGuiHeight - MENU_HEIGHT - 1) {
+                DEBG_PRINT("[TRACE]: DOWN\n");
+                if ((cursorY < lastGuiHeight - MENU_HEIGHT - 1) && (getTotalAmountOfRelativeLines() > cursorY + 1)) {
+                    DEBG_PRINT("[TRACE]: DOWN success\n");
                     cursorY++;
                     refreshFlag = true;
                 }
                 break;
                 
             case KEY_LEFT:
+                DEBG_PRINT("[TRACE]: LEFT\n");
                 if (cursorX > 0) {
+                    DEBG_PRINT("[TRACE]: LEFT success\n");
                     cursorX--;
                     refreshFlag = true;
                 }
                 break;
                 
             case KEY_RIGHT: {
-                int maxCol = getUtfNoControlCharCount(cursorY);
-                if (maxCol < 0) maxCol = 0;
-                if (cursorX < maxCol && cursorX < lastGuiWidth - 1) {
+                DEBG_PRINT("[TRACE]: RIGHT\n");
+                if (cursorX < getUtfNoControlCharCount(cursorY) + 1 && cursorX < lastGuiWidth - 1) { //+1 since should be able to move over to last position
+                    DEBG_PRINT("[TRACE]: RIGHT success\n");
                     cursorX++;
                     refreshFlag = true;
                 }
@@ -464,19 +387,17 @@ void process_input(void) {
             int atomicPos = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
             if (atomicPos >= 0) {
                 // Convert single character to null-terminated wide string
-                wchar_t textToInsert[2] = {wch, L'\0'};
                 
-                DEBG_PRINT("Inserting Unicode character: U+%04X (%lc) at position %d\n", 
+                DEBG_PRINT("Inserting Unicode character: U+%04X '%lc' at position %d\n", 
                           (unsigned int)wch, wch, atomicPos);
-                
-                if (insert(activeSequence, atomicPos, textToInsert) > 0) {
+                wchar_t convertedWchar = (wchar_t)wch;
+
+                if (insert(activeSequence, atomicPos, &convertedWchar) > 0) {
                     cursorX++;
                     refreshFlag = true;
                     
                     // Invalidate line stats since text changed
                     setLineStatsNotUpdated();
-                    // Re-initialize line stats starting from line 0
-                    updateLine(0, 0, 0);
                 }
             } else {
                 DEBG_PRINT("Invalid atomic position for insert: %d\n", atomicPos);
@@ -486,15 +407,26 @@ void process_input(void) {
             if (activeSequence != NULL) {
                 int atomicPos = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
                 if (atomicPos >= 0) {
-                    wchar_t newline[2] = {L'\n', L'\0'};
-                    if (insert(activeSequence, atomicPos, newline) > 0) {
+
+                    wchar_t* toInsert = NULL;
+                    switch (getCurrentLineBstd()){
+                        case LINUX:
+                            toInsert = L"\n";
+                            break;
+                        case MSDOS:
+                            toInsert = L"\n\r";
+                            break;
+                        case MAC:
+                            toInsert = L"\r";
+                            break;
+                    }
+                    if (insert(activeSequence, atomicPos, toInsert) > 0) {
                         cursorY++;
                         cursorX = 0;
                         refreshFlag = true;
                         
                         // Invalidate line stats
                         setLineStatsNotUpdated();
-                        updateLine(0, 0, 0);
                     }
                 }
             }
@@ -509,7 +441,6 @@ void process_input(void) {
                             cursorX--;
                             refreshFlag = true;
                             setLineStatsNotUpdated();
-                            updateLine(0, 0, 0);
                         }
                     }
                 } else if (cursorY > 0) {
@@ -522,7 +453,6 @@ void process_input(void) {
                             cursorX = (prevLineLength > 0) ? prevLineLength : 0;
                             refreshFlag = true;
                             setLineStatsNotUpdated();
-                            updateLine(0, 0, 0);
                         }
                     }
                 }
@@ -534,4 +464,41 @@ void process_input(void) {
                       (unsigned int)wch, (int)wch);
         }
     }
+}
+
+
+/*
+================
+  Unicode Utils
+================
+*/
+
+/**
+ * Check if a wide character is printable (not a control character)
+ * This includes all Unicode characters that should be displayed
+ */
+bool is_printable_unicode(wint_t wch) {
+    // Basic ASCII printable range
+    if (wch >= 32 && wch <= 126) {
+        return true;
+    }
+    
+    // Extended ASCII and Unicode ranges
+    if (wch >= 160) { // Non-breaking space and above
+        // Exclude some common control character ranges
+        if ((wch >= 0x007F && wch <= 0x009F) ||  // C1 control characters
+            (wch >= 0xFDD0 && wch <= 0xFDEF) ||  // Non-characters
+            (wch >= 0xFFFE && wch <= 0xFFFF)) {  // Non-characters
+            return false;
+        }
+        return true;
+    }
+    
+    // Some additional printable characters in the lower range
+    if (wch == 0x00A0 ||  // Non-breaking space
+        (wch >= 0x00A1 && wch <= 0x00FF)) {  // Latin-1 supplement
+        return true;
+    }
+    
+    return false;
 }
