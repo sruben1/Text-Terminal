@@ -81,6 +81,14 @@ ReturnCode closeSequence( Sequence *sequence, bool forceFlag ); /* Free all reso
 */
 Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemBlock); /* More efficient when retrieving multiple consecutive Items , if multiple Items are already stored in a consecutive block. Size == last index + 1 (of return Block) or -1 to indicate error.*/
 
+
+/*
+=========================
+  Query internals
+=========================
+*/
+int getCurrentWordCount();
+
 /*
 =========================
   Write/Edit

@@ -101,52 +101,57 @@ int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence)
         }
     }
     
-    // quick access case:
+    // Quick access case: if column is 0, return start of line
     if(charColumn == 0){
         return lineStats.absolutePos[relativeLine];
     } 
 
-    // General case, determine by iterating through chars:
-    Atomic *currentItemBlock = NULL;
-
-    int atomicIndex = 0;
-
-    // Get first block of the line
-    Size size = getItemBlock(sequence, lineStats.absolutePos[relativeLine], &currentItemBlock);
-    if(size < 0){
-        ERR_PRINT("Position determination failed (on first block request).\n");
-        return -1;
-    }
-
+    // General case: scan from line start to find the position
+    Position lineStart = lineStats.absolutePos[relativeLine];
+    Position currentPos = lineStart;
+    int charsSeen = 0;
+    
     LineBidentifier lineBidentifier = getCurrentLineBidentifier();
-
-    int charCounter = 0;
-    int blockOffset = 0;
-    while (atomicIndex < charColumn){
-        if(atomicIndex >= size + blockOffset){
-            // get next block
-            size = getItemBlock(sequence, lineStats.absolutePos[relativeLine] + atomicIndex, &currentItemBlock);
-            if(size < 0){
-                ERR_PRINT("Position determination failed (on consecutive block request).\n");
-                return -1;
-            }
-        }
-        DEBG_PRINT("seeking at char: '%c'\n", currentItemBlock[atomicIndex]); 
-        if(currentItemBlock[atomicIndex] == lineBidentifier){
-            // found line end (char)
-            ERR_PRINT("Line shorter then requested column postion!\n");
+    
+    while(charsSeen < charColumn) {
+        Atomic* currentItemBlock = NULL;
+        Size blockSize = getItemBlock(sequence, currentPos, &currentItemBlock);
+        
+        if(blockSize <= 0 || currentItemBlock == NULL){
+            ERR_PRINT("Failed to get block at position %d\n", (int)currentPos);
             return -1;
         }
-        if( ((currentItemBlock[atomicIndex] & 0xC0) != 0x80) && (currentItemBlock[atomicIndex] >= 0x20) ){
-            // If start of char UTF-8 char and not a control char:
-            charCounter++;
+        
+        // Find position within this block
+        for(int blockOffset = 0; blockOffset < blockSize; blockOffset++) {
+            Atomic currentChar = currentItemBlock[blockOffset];
+            
+            // Check for line end
+            if(currentChar == lineBidentifier || currentChar == '\n' || currentChar == END_OF_TEXT_CHAR){
+                ERR_PRINT("Line shorter than requested column position! (found line end at char %d, requested %d)\n", 
+                         charsSeen, charColumn);
+                return -1;
+            }
+            
+            // Count displayable UTF-8 characters
+            if( ((currentChar & 0xC0) != 0x80) && (currentChar >= 0x20) ){
+                if(charsSeen == charColumn) {
+                    return currentPos + blockOffset;
+                }
+                charsSeen++;
+            }
+            
+            // If this is the position we want, return it
+            if(charsSeen == charColumn) {
+                return currentPos + blockOffset + 1;
+            }
         }
-        atomicIndex++;
+        
+        currentPos += blockSize;
     }
-    DEBG_PRINT("Seek ended with blockSize = %d, blockOffset = %d, nbr of chars %d\n", size, blockOffset, charCounter);
-    return charCounter;
+    
+    return currentPos;
 }
-
 
 /*
 ====================
