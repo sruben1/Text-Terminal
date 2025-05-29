@@ -36,11 +36,6 @@ static int _initDebugger() {
         }
     }
 #else
-    static int _initDebugger() {
-        _private_debug_file = fopen("./debug.log", "w");
-        return 0;
-    }
-
     static void _closeDebugger() {
         if (_private_debug_file) {
             fclose(_private_debug_file);

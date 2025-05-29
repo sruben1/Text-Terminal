@@ -188,7 +188,6 @@ wchar_t* utf8_to_wchar(const Atomic* itemArray, int sizeToParse, int precomputed
 
     if (!wStrToReturn){
         ERR_PRINT("Failed to allocate memory for Wstr!\n");
-        DEBG_PRINT("ERRORRR\n");
         return NULL;
     }
 
@@ -199,12 +198,12 @@ wchar_t* utf8_to_wchar(const Atomic* itemArray, int sizeToParse, int precomputed
     size_t atomicIndx = 0;
     size_t destIndx = 0;
     
-    DEBG_PRINT("Bool: %d\n", (((int)atomicIndx) < sizeToParse) && (((int)destIndx) < precomputedWCharCount));
+    //DEBG_PRINT("Bool: %d\n", (((int)atomicIndx) < sizeToParse) && (((int)destIndx) < precomputedWCharCount));
     while((((int)atomicIndx) < sizeToParse) && (((int)destIndx) < precomputedWCharCount)){
-        DEBG_PRINT("Trying to parse\n");
-        DEBG_PRINT("Current parser byte: %02x\n", (uint8_t) itemArray[(int)atomicIndx]);
+        //DEBG_PRINT("Trying to parse\n");
+        //DEBG_PRINT("Current parser byte: %02x\n", (uint8_t) itemArray[(int)atomicIndx]);
         size_t lenOfCurrentParse = mbrtowc(&wStrToReturn[(int)destIndx], (const char*) &itemArray[(int)atomicIndx], sizeToParse - atomicIndx, &state);
-        DEBG_PRINT("Got parser size:%d\n", (int) lenOfCurrentParse);
+        //BG_PRINT("Got parser size:%d\n", (int) lenOfCurrentParse);
         if((int) lenOfCurrentParse == -1){
             ERR_PRINT("Encountered invalid utf-8 char while converting!\n");
             wStrToReturn[destIndx] = L'\uFFFD'; //Insert "unknown" character instead.
@@ -220,7 +219,6 @@ wchar_t* utf8_to_wchar(const Atomic* itemArray, int sizeToParse, int precomputed
             atomicIndx += (int)lenOfCurrentParse;
         }
         //DEBG_PRINT("Bool: %d\n", (((int)atomicIndx) < sizeToParse) && (((int)destIndx) < precomputedWCharCount));
-        //SET_BREAK_POINT;
     }
     //Finalize parse
     if (( (int) destIndx < precomputedWCharCount)){
