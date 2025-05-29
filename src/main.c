@@ -412,9 +412,11 @@ void process_input(void) {
                 
                 DEBG_PRINT("Inserting Unicode character: U+%04X '%lc' at position %d\n", 
                           (unsigned int)wch, wch, atomicPos);
-                wchar_t convertedWchar = (wchar_t)wch;
+                wchar_t convertedWchar[2];  // Wide string to hold the character + null terminator
+                convertedWchar[0] = (wchar_t)wch;
+                convertedWchar[1] = L'\0';
 
-                if (insert(activeSequence, atomicPos, &convertedWchar) > 0) {
+                if (insert(activeSequence, atomicPos, convertedWchar) > 0) {
                     cursorX++;
                     refreshFlag = true;
                     
@@ -430,17 +432,21 @@ void process_input(void) {
                 int atomicPos = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
                 if (atomicPos >= 0) {
 
-                    wchar_t* toInsert = NULL;
-                    switch (getCurrentLineBstd()){
+                    wchar_t toInsert[3];  // Buffer to hold the line ending
+
+                    switch (getCurrentLineBstd()) {
                         case LINUX:
-                            toInsert = L"\n";
+                            wcscpy(toInsert, L"\n");
                             break;
                         case MSDOS:
-                            toInsert = L"\n\r";
+                            wcscpy(toInsert, L"\r\n");
                             break;
                         case MAC:
-                            toInsert = L"\r";
+                            wcscpy(toInsert, L"\r");
                             break;
+                        default:
+                            ERR_PRINT("Enter input could not be handled since line break std not properly initialized.\n");
+                            wcscpy(toInsert, L"");
                     }
                     if (insert(activeSequence, atomicPos, toInsert) > 0) {
                         cursorY++;
