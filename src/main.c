@@ -39,6 +39,7 @@ void init_editor(void);
 void close_editor(void);
 void checkSizeChanged(void);
 void process_input(void);
+void moveAndUpdateCursor();
 bool is_printable_unicode(wint_t wch);
 
 /*======== operations ========*/
@@ -77,7 +78,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
     int atomicsInLine = 0; // not an index! (+1 generally) 
     int nbrOfUtf8CharsInLine = 0;
     int nbrOfUtf8CharsNoControlCharsInLine = 0; // If we want to ignore line breaks.
-    int frozenLineStart = 0; // Stays set until line break or end of text for statistics
+    int frozenLineStart = firstAtomic; // Stays set until line break or end of text for statistics
 
     while( currLineBcount < nbrOfLines ){
         DEBG_PRINT("[Trace] : in main while loop, %p %d %d \n", activeSequence, currentLineBreakStd, currentLineBidentifier);
@@ -85,7 +86,6 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
         if(requestNextBlock){
             DEBG_PRINT("[Trace] : Consecutive block requested\n");
             firstAtomic = firstAtomic + size; // since size == last index +1 no additional +1 needed.
-            frozenLineStart = firstAtomic;
             size = (int) getItemBlock(activeSequence, firstAtomic, &currentItemBlock);
             DEBG_PRINT("The size value %d\n", size);
             if (size < 0){
@@ -104,7 +104,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
         int currentSectionStart = 0; //i.e. offset of nbr of Items form pointer start
         int offsetCounter = 0; //i.e. RUNNING offset of nbr of Items form currentSectionStart
         int nbrOfUtf8Chars = 0;
-        int nbrOfUtf8CharsNoControlChars = 0; // If we want to ignore line breaks.
+        int nbrOfUtf8CharsNoControlChars = 0;// If we want to ignore line breaks etc.
 
         while((currLineBcount < nbrOfLines) && !requestNextBlock){
             DEBG_PRINT("handling atomic at index: %d, is : '%c' \n", (firstAtomic + currentSectionStart + offsetCounter), currentItemBlock[currentSectionStart + offsetCounter]);
@@ -149,16 +149,14 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                     DEBG_PRINT("| %02x |", (uint8_t) textContent[i]);
                 }
                 DEBG_PRINT("\n~~~~~~~~~~~~~~~~~~\n");
-                #endif
-
+                #endif  
+                
                 if(currentItemBlock[currentSectionStart] != END_OF_TEXT_CHAR){
                     //print out line or block (could be either!!), interpreted as UTF-8 sequence:atomicsInLine:
-                    DEBG_PRINT(">>>>>>Trying to print: line %d, at column %d\n", currLineBcount, nbrOfUtf8CharsNoControlCharsInLine + 1);
-                    mvwaddwstr(stdscr, currLineBcount, nbrOfUtf8CharsNoControlCharsInLine + 1, lineToPrint);
+                    DEBG_PRINT(">>>>>>Trying to print: line %d, at column %d\n", currLineBcount, nbrOfUtf8CharsNoControlCharsInLine);
+                    mvwaddwstr(stdscr, currLineBcount, nbrOfUtf8CharsNoControlCharsInLine, lineToPrint);
                     // TODO: Horizontal scrolling  (i.e.left truncation) and right side truncation needed here as well.
 
-                    // remove all chars that my be left from previous print... -> should not be needed since screen shall be blank each time!
-                    //clrtoeol(); 
                 }
 
                 /* reset&setup for next block/line iteration: */
@@ -168,13 +166,18 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                     atomicsInLine += offsetCounter+1;
                     nbrOfUtf8CharsInLine += nbrOfUtf8Chars;
                     nbrOfUtf8CharsNoControlCharsInLine += nbrOfUtf8CharsNoControlChars;
+
                     // Save in the line stats (from variables) into dedicated management structure:
-                    updateLine(currLineBcount++, currentSectionStart, nbrOfUtf8CharsNoControlCharsInLine);
+                    updateLine(currLineBcount, frozenLineStart, nbrOfUtf8CharsNoControlCharsInLine);
+                    //Set following invalid so that last line is always identifiable as such...
+                    updateLine(currLineBcount + 1, -1, 0);
+
+                    currLineBcount++;
 
                     DEBG_PRINT("atomicsInLine: %d, nbrOfUtf8CharsInLine: %d, nbrOfUtf8CharsNoControlCharsInLine: %d\n", atomicsInLine, nbrOfUtf8CharsInLine, nbrOfUtf8CharsNoControlCharsInLine);
                     // Reset variables for next line:
                     atomicsInLine = 0;
-                    frozenLineStart = currentSectionStart + offsetCounter +1;
+                    frozenLineStart = firstAtomic + offsetCounter + 1;
                     nbrOfUtf8CharsInLine = 0;
                     nbrOfUtf8CharsNoControlCharsInLine = 0;
                 } else{
@@ -241,6 +244,7 @@ int main(int argc, char *argv[]){
         if(refreshFlag){
             erase(); // Clear screen to prevent artifacts
             
+            profilerStart();
             // Render text if we have valid dimensions
             if (activeSequence != NULL && lastGuiHeight > MENU_HEIGHT) {
                 int linesToRender = lastGuiHeight - MENU_HEIGHT;
@@ -251,7 +255,7 @@ int main(int argc, char *argv[]){
             
             // Draw status line
             if (lastGuiHeight >= MENU_HEIGHT) {
-                mvprintw(lastGuiHeight - 1, 0, "Ln %d, Col %d   Ctrl-l to quit", cursorY + 1, cursorX + 1);
+                mvprintw(lastGuiHeight - 1, getAbsoluteAtomicIndex(0,0,activeSequence), "Ln %d, Col %d   Ctrl-l to quit", cursorY + 1, cursorX + 1);
                 clrtoeol(); // Clear rest of status line
             }
             
@@ -260,6 +264,7 @@ int main(int argc, char *argv[]){
             
             refresh();
             refreshFlag = false;
+            profilerStop("gui refresh");
         }
     }
 
@@ -340,38 +345,40 @@ void process_input(void) {
         // Function key pressed
         switch (wch){
             case KEY_UP:
-                DEBG_PRINT("[TRACE]:UP\n");
+                DEBG_PRINT("[CURSOR]:UP\n");
                 if (cursorY > 0) {
-                    DEBG_PRINT("[TRACE]:UP success\n");
-                    cursorY--;
-                    refreshFlag = true;
+                    DEBG_PRINT("[CURSOR]:UP success\n");
+                    --cursorY;
+                    cursorX = cursorX <= getUtfNoControlCharCount(cursorY);
                 }
                 break;
                 
             case KEY_DOWN:
-                DEBG_PRINT("[TRACE]: DOWN\n");
+                DEBG_PRINT("[CURSOR]: DOWN\n");
                 if ((cursorY < lastGuiHeight - MENU_HEIGHT - 1) && (getTotalAmountOfRelativeLines() > cursorY + 1)) {
-                    DEBG_PRINT("[TRACE]: DOWN success\n");
+                    DEBG_PRINT("[CURSOR]: DOWN success\n");
                     cursorY++;
-                    refreshFlag = true;
+                    
                 }
                 break;
                 
             case KEY_LEFT:
-                DEBG_PRINT("[TRACE]: LEFT\n");
+                DEBG_PRINT("[CURSOR]: LEFT\n");
                 if (cursorX > 0) {
-                    DEBG_PRINT("[TRACE]: LEFT success\n");
+                    DEBG_PRINT("[CURSOR]: LEFT success\n");
                     cursorX--;
-                    refreshFlag = true;
+                    move(cursorY, cursorX);
+                    refresh();
                 }
                 break;
                 
             case KEY_RIGHT: {
-                DEBG_PRINT("[TRACE]: RIGHT\n");
-                if (cursorX < getUtfNoControlCharCount(cursorY) + 1 && cursorX < lastGuiWidth - 1) { //+1 since should be able to move over to last position
-                    DEBG_PRINT("[TRACE]: RIGHT success\n");
+                DEBG_PRINT("[CURSOR]: RIGHT\n");
+                if (cursorX < getUtfNoControlCharCount(cursorY) && cursorX < lastGuiWidth - 1) {
+                    DEBG_PRINT("[CURSOR]: RIGHT success\n");
                     cursorX++;
-                    refreshFlag = true;
+                    move(cursorY, cursorX);
+                    refresh();
                 }
                 break;
             }
@@ -466,6 +473,13 @@ void process_input(void) {
     }
 }
 
+/**
+ * Updates and moves the cursor state in most efficient manner. Uses the general internal cursorX/Y variables as new position.
+ */
+void moveAndUpdateCursor(){
+    move(cursorY, cursorX);
+    refresh();
+}
 
 /*
 ================

@@ -66,6 +66,7 @@ int getUtfNoControlCharCount(int relativeLine){
  * Interface to invalidate current line statistics until first line is updated again. 
  */
 ReturnCode setLineStatsNotUpdated(){
+    DEBG_PRINT("Line stats set to not invalidated.\n");
     lineStats.absolutePos[0] = -1;
     return 1;
 }
