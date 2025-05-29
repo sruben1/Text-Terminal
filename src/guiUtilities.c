@@ -134,6 +134,8 @@ int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence)
 
     LineBidentifier lineBidentifier = getCurrentLineBidentifier();
 
+    bool checkForInvalidity = false;
+
     int charCounter = 0;
     int blockOffset = 0;
     while (charCounter < charColumn){
@@ -143,14 +145,15 @@ int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence)
             size = getItemBlock(sequence, lineStats.absolutePos[relativeLine] + blockOffset, &currentItemBlock);
             atomicIndex = 0;
             if(size < 0 || currentItemBlock[atomicIndex] == END_OF_TEXT_CHAR){
-                ERR_PRINT("Position determination failed (on consecutive block request).\n");
-                return -1;
+                checkForInvalidity = true;
+                break;
             }
             DEBG_PRINT("Seeking in next block, has size: %d\n", (int) size);
         }
         DEBG_PRINT("seeking at char%d: '%c'\n", atomicIndex, currentItemBlock[atomicIndex]); 
         if(currentItemBlock[atomicIndex] == lineBidentifier){
             if(charCounter + 1 == charColumn){
+                DEBG_PRINT("LAST POS +1 calculation case in abs atomic index conversion...\n");
                 // Requested char column is exactly one position beyond the last element
                 return atomicIndex + blockOffset + 1;
             }
@@ -164,6 +167,18 @@ int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence)
         }
         atomicIndex++;
     }
+
+    if(checkForInvalidity){
+        DEBG_PRINT("Char counter =: %d", charCounter);
+        if(charCounter + 1 == charColumn){
+            DEBG_PRINT("LAST POS +1 calculation case in abs atomic index conversion...\n");
+            // Requested char column is exactly one position beyond the last element
+            return blockOffset;
+        }
+        ERR_PRINT("Position determination failed (on consecutive block request).\n");
+        return -1;
+    }
+
     DEBG_PRINT("Seek ended with blockSize = %d, blockOffset = %d, nbr of chars %d\n", size, blockOffset, charCounter);
     return atomicIndex + blockOffset -1;
 }

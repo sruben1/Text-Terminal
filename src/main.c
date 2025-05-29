@@ -294,6 +294,7 @@ void init_editor(void) {
     
     // Initialize first line stats
     updateLine(0, 0, 0);
+    refreshFlag = true;
 }
 
 void close_editor(void) {
@@ -349,7 +350,9 @@ void process_input(void) {
                 if (cursorY > 0) {
                     DEBG_PRINT("[CURSOR]:UP success\n");
                     --cursorY;
-                    cursorX = cursorX <= getUtfNoControlCharCount(cursorY);
+                    //in all cases limit to line size since line existence already ensured.
+                    cursorX = (cursorX < getUtfNoControlCharCount(cursorY)) ? cursorX : getUtfNoControlCharCount(cursorY);
+                    moveAndUpdateCursor();
                 }
                 break;
                 
@@ -358,7 +361,10 @@ void process_input(void) {
                 if ((cursorY < lastGuiHeight - MENU_HEIGHT - 1) && (getTotalAmountOfRelativeLines() > cursorY + 1)) {
                     DEBG_PRINT("[CURSOR]: DOWN success\n");
                     cursorY++;
-                    
+                    if(getUtfNoControlCharCount(cursorY) > 0){
+                        cursorX = (cursorX < getUtfNoControlCharCount(cursorY)) ? cursorX : getUtfNoControlCharCount(cursorY);
+                    }
+                    moveAndUpdateCursor();
                 }
                 break;
                 
@@ -367,8 +373,12 @@ void process_input(void) {
                 if (cursorX > 0) {
                     DEBG_PRINT("[CURSOR]: LEFT success\n");
                     cursorX--;
-                    move(cursorY, cursorX);
-                    refresh();
+                    moveAndUpdateCursor();
+                } else if (cursorX == 0 && cursorY > 0){
+                    //go to previous line...
+                    cursorY--;
+                    cursorX = getUtfNoControlCharCount(cursorY);
+                    moveAndUpdateCursor();
                 }
                 break;
                 
@@ -377,9 +387,14 @@ void process_input(void) {
                 if (cursorX < getUtfNoControlCharCount(cursorY) && cursorX < lastGuiWidth - 1) {
                     DEBG_PRINT("[CURSOR]: RIGHT success\n");
                     cursorX++;
-                    move(cursorY, cursorX);
-                    refresh();
+                    moveAndUpdateCursor();                    
+                } else if (cursorX == getUtfNoControlCharCount(cursorY) && cursorY +1 < getTotalAmountOfRelativeLines()) {
+                    //go to next line...
+                    cursorX = 0;
+                    cursorY++;
+                    moveAndUpdateCursor();   
                 }
+                
                 break;
             }
             
