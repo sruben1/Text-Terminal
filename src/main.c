@@ -42,7 +42,6 @@ void process_input(void);
 void moveAndUpdateCursor();
 bool is_printable_unicode(wint_t wch);
 
-
 /*======== operations ========*/
 ReturnCode open_and_setup_file(char* file_path){
     // Don't reassign activeSequence if it's already initialized
@@ -159,7 +158,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                     // TODO: Horizontal scrolling  (i.e.left truncation) and right side truncation needed here as well.
 
                 }
-                
+
                 /* reset&setup for next block/line iteration: */
                 free(lineToPrint);
                 if ((currentItemBlock[currentSectionStart + offsetCounter] == currentLineBidentifier) || (currentItemBlock[currentSectionStart + offsetCounter] == END_OF_TEXT_CHAR)){
@@ -298,7 +297,6 @@ void init_editor(void) {
     refreshFlag = true;
 }
 
-
 void close_editor(void) {
     closeDebuggerFiles;
     endwin();
@@ -330,34 +328,6 @@ void checkSizeChanged(void){
         
         refreshFlag = true;
     }
-}
-
-static void copy_to_clipboard(const char *text) {
-    FILE *pipe = popen("xclip -selection clipboard", "w");
-    if (!pipe) return;
-    fwrite(text, sizeof(char), strlen(text), pipe);
-    pclose(pipe);
-}
-
-// Paste a UTF-8 string from the X clipboard (malloc'ed, caller must free)
-static char *paste_from_clipboard(void) {
-    FILE *pipe = popen("xclip -selection clipboard -o", "r");
-    if (!pipe) return NULL;
-    size_t cap = 1024, len = 0;
-    char *buf = malloc(cap);
-    if (!buf) { pclose(pipe); return NULL; }
-    int c;
-    while ((c = fgetc(pipe)) != EOF) {
-        if (len + 1 >= cap) {
-            cap *= 2;
-            buf = realloc(buf, cap);
-            if (!buf) break;
-        }
-        buf[len++] = c;
-    }
-    buf[len] = '\0';
-    pclose(pipe);
-    return buf;
 }
 
 void process_input(void) {
@@ -432,55 +402,6 @@ void process_input(void) {
                 break;
         }
     } 
-    void process_input(void) {
-    wint_t wch;
-    int status = get_wch(&wch);
-
-    // Quit on Ctrl-L
-    if (status == OK && wch == CTRL_KEY('l')) {
-        close_editor();
-        exit(0);
-    }
-
-    // ----- Clipboard shortcuts -----
-    if (status == OK && wch == CTRL_KEY('c')) {
-        // Copy current line
-        int start = getAbsoluteAtomicIndex(cursorY, 0, activeSequence);
-        int end = getAbsoluteAtomicIndex(cursorY,
-            getUtfNoControlCharCount(cursorY), activeSequence);
-        if (start >= 0 && end > start) {
-            size_t n = end - start;
-            char *line = malloc(n + 1);
-            // Extract bytes via guiUtilities helper
-            if (get_raw_bytes(activeSequence, start, n, line) == n) {
-                line[n] = '\0';
-                copy_to_clipboard(line);
-            }
-            free(line);
-        }
-        return;
-    }
-    if (status == OK && wch == CTRL_KEY('v')) {
-        // Paste at cursor
-        char *clip = paste_from_clipboard();
-        if (clip && activeSequence) {
-            int pos = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
-            if (pos >= 0) {
-                // Convert UTF-8 to wchar
-                int utfChars = count_utf8_chars((unsigned char*)clip);
-                wchar_t *wbuf = utf8_to_wchar((Atomic*)clip, strlen(clip), utfChars);
-                if (wbuf) {
-                    insert(activeSequence, pos, wbuf);
-                    cursorX += wcslen(wbuf);
-                    refreshFlag = true;
-                    free(wbuf);
-                }
-            }
-        }
-        free(clip);
-        return;
-    }
-}
     else if (status == OK) {
         // Regular character input 
         if (is_printable_unicode(wch) && activeSequence != NULL) {
