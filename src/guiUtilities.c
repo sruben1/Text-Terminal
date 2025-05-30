@@ -107,6 +107,7 @@ ReturnCode setAbsoluteLineNumber(int newLineNumber){
  */
 int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence){
     DEBG_PRINT("Calculating abs atomic index for: line%d, column%d...\n", relativeLine, charColumn);
+    
     // Check that request is valid in current data structure state: 
     for(int i = 0; i <= relativeLine; i++){
         if (lineStats.absolutePos[i] == -1){
@@ -115,74 +116,62 @@ int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence)
         }
     }
     
-    // quick access case:
+    // Quick access case: beginning of line
     if(charColumn == 0){
         return lineStats.absolutePos[relativeLine];
     } 
 
     // General case, determine by iterating through chars:
     Atomic *currentItemBlock = NULL;
-
-    int atomicIndex = 1; // Set to one, since 0-th position case already handled. 
-
-    // Get first block of the line
-    Size size = getItemBlock(sequence, lineStats.absolutePos[relativeLine], &currentItemBlock);
-    if(size < 0 || currentItemBlock[atomicIndex] == END_OF_TEXT_CHAR){
-        ERR_PRINT("Position determination failed (on first block request).\n");
-        return -1;
-    }
-
     LineBidentifier lineBidentifier = getCurrentLineBidentifier();
-
-    bool checkForInvalidity = false;
-
+    
+    int currentAtomicPos = lineStats.absolutePos[relativeLine];
     int charCounter = 0;
-    int blockOffset = 0;
-    while (charCounter < charColumn){
-        if(atomicIndex >= size){
-            // get next block
-            blockOffset += atomicIndex;
-            size = getItemBlock(sequence, lineStats.absolutePos[relativeLine] + blockOffset, &currentItemBlock);
-            atomicIndex = 0;
-            if(size < 0 || currentItemBlock[atomicIndex] == END_OF_TEXT_CHAR){
-                checkForInvalidity = true;
-                break;
-            }
-            DEBG_PRINT("Seeking in next block, has size: %d\n", (int) size);
-        }
-        DEBG_PRINT("seeking at char%d: '%c'\n", atomicIndex, currentItemBlock[atomicIndex]); 
-        if(currentItemBlock[atomicIndex] == lineBidentifier){
-            if(charCounter + 1 == charColumn){
-                DEBG_PRINT("LAST POS +1 calculation case in abs atomic index conversion...\n");
-                // Requested char column is exactly one position beyond the last element
-                return atomicIndex + blockOffset + 1;
-            }
-            // found line end (char)
-            ERR_PRINT("Line shorter then requested column postion!\n");
+    
+    // Iterate through the text to find the correct position
+    while (charCounter < charColumn) {
+        Size size = getItemBlock(sequence, currentAtomicPos, &currentItemBlock);
+        if (size <= 0 || currentItemBlock == NULL) {
+            ERR_PRINT("Failed to get block at position %d\n", currentAtomicPos);
             return -1;
         }
-        if( ((currentItemBlock[atomicIndex] & 0xC0) != 0x80) && (currentItemBlock[atomicIndex] >= 0x20) ){
-            // If start of char UTF-8 char and not a control char:
+        
+        // Check if we've reached end of text
+        if (currentItemBlock[0] == END_OF_TEXT_CHAR) {
+            DEBG_PRINT("Reached end of text, returning position %d\n", currentAtomicPos);
+            return currentAtomicPos;
+        }
+        
+        // Check if we've hit a line break before reaching the desired column
+        if (currentItemBlock[0] == lineBidentifier) {
+            DEBG_PRINT("Hit line break at char %d, column %d requested\n", charCounter, charColumn);
+            // If we're asking for position right after the line, return position after line break
+            if (charCounter == charColumn) {
+                return currentAtomicPos + 1;
+            } else {
+                ERR_PRINT("Line shorter than requested column position!\n");
+                return -1;
+            }
+        }
+        
+        // If this is a UTF-8 character start and not a control character, count it
+        if (((currentItemBlock[0] & 0xC0) != 0x80) && (currentItemBlock[0] >= 0x20)) {
             charCounter++;
+            DEBG_PRINT("Found char %d at atomic pos %d: '%c'\n", charCounter, currentAtomicPos, currentItemBlock[0]);
         }
-        atomicIndex++;
-    }
-
-    if(checkForInvalidity){
-        DEBG_PRINT("Char counter =: %d", charCounter);
-        if(charCounter + 1 == charColumn){
-            DEBG_PRINT("LAST POS +1 calculation case in abs atomic index conversion...\n");
-            // Requested char column is exactly one position beyond the last element
-            return blockOffset;
+        
+        // If we've found enough characters, return the current position
+        if (charCounter == charColumn) {
+            return currentAtomicPos;
         }
-        ERR_PRINT("Position determination failed (on consecutive block request).\n");
-        return -1;
+        
+        currentAtomicPos++;
     }
-
-    DEBG_PRINT("Seek ended with blockSize = %d, blockOffset = %d, nbr of chars %d\n", size, blockOffset, charCounter);
-    return atomicIndex + blockOffset -1;
+    
+    // Should not reach here in normal cases
+    ERR_PRINT("Unexpected end of position calculation\n");
+    return currentAtomicPos;
 }
-
 /*
 ====================
     W-CHAR utilities:
