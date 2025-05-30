@@ -81,7 +81,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
     int frozenLineStart = firstAtomic; // Stays set until line break or end of text for statistics
 
     while( currLineBcount < nbrOfLines ){
-        DEBG_PRINT("[Trace] : in main print while loop, %p %d %d \n", activeSequence, currentLineBreakStd, currentLineBidentifier);
+        //DEBG_PRINT("[Trace] : in main print while loop, %p %d %d \n", activeSequence, currentLineBreakStd, currentLineBidentifier);
         Atomic* currentItemBlock = NULL;
         if(requestNextBlock){
             //DEBG_PRINT("[Trace] : Consecutive block requested\n");
@@ -119,8 +119,8 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                 } 
             }
             if((currentItemBlock[currentSectionStart + offsetCounter] == currentLineBidentifier) || ((currentSectionStart+ offsetCounter) == size-1)){
-                DEBG_PRINT("found a line (or at the end of block)! current line count = %d \n", (currLineBcount +1));
-                DEBG_PRINT("Number of UTF-8 chars in this line/end of block = %d \n",  nbrOfUtf8Chars);
+                //DEBG_PRINT("found a line (or at the end of block)! current line count = %d \n", (currLineBcount +1));
+                //DEBG_PRINT("Number of UTF-8 chars in this line/end of block = %d \n",  nbrOfUtf8Chars);
                 
                 if( ((currentLineBreakStd == MSDOS) && ((currentSectionStart + offsetCounter) > 0) && (currentItemBlock[currentSectionStart + offsetCounter-1] != '\r'))){ // Might remove if it causes issues, MSDOS should also work if only check for '\n' characters ('\r' then simply not evaluated).
                     /* Error case, lonely '\n' found despite '\r\n' current standard !*/
@@ -153,7 +153,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                 
                 if(currentItemBlock[currentSectionStart] != END_OF_TEXT_CHAR){
                     //print out line or block (could be either!!), interpreted as UTF-8 sequence:atomicsInLine:
-                    DEBG_PRINT(">>>>>>Trying to print: line %d, at column %d\n", currLineBcount, nbrOfUtf8CharsNoControlCharsInLine);
+                    //DEBG_PRINT(">>>>>>Trying to print: line %d, at column %d\n", currLineBcount, nbrOfUtf8CharsNoControlCharsInLine);
                     mvwaddwstr(stdscr, currLineBcount, nbrOfUtf8CharsNoControlCharsInLine, lineToPrint);
                     // TODO: Horizontal scrolling  (i.e.left truncation) and right side truncation needed here as well.
 
@@ -405,6 +405,7 @@ void process_input(void) {
     else if (status == OK) {
         // Regular character input 
         if (is_printable_unicode(wch) && activeSequence != NULL) {
+            profilerStart();
             // Get position for insertion
             int atomicPos = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
             if (atomicPos >= 0) {
@@ -426,6 +427,7 @@ void process_input(void) {
             } else {
                 DEBG_PRINT("Invalid atomic position for insert: %d\n", atomicPos);
             }
+            profilerStop("1 char insert");
         }
         else if (wch == 10 || wch == 13) { // Enter key
         if (activeSequence != NULL) {

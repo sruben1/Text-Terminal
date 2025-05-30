@@ -20,10 +20,17 @@ static LineBidentifier _currLineBidentifier = NONE_ID;
 static int fdOfCurrentOpenFile = 0;
 static bool currentlySaved = true;
 static Atomic endOfTextSignal = END_OF_TEXT_CHAR;
+static struct _lastInsert
+{
+  int _lastAtomicPos;
+  int _lastCharSize;
+  long int _lastWritePos;
+} _lastInsert ={-1,-1, -1};
+
 
 /*------ Declarations ------ */
 NodeResult getNodeForPosition(Sequence *sequence, Position position);
-ReturnCode writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert);
+ReturnCode writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert, int *sizeOfCharOrNull);
 int isContinuationByte(Sequence *sequence, DescriptorNode *node, int offsetInBlock);
 int amountOfContinuationBytes(Sequence *sequence, DescriptorNode *node, int offsetInBlock);
 size_t getUtf8ByteSize(const wchar_t* wstr);
@@ -232,13 +239,18 @@ size_t getUtf8ByteSize(const wchar_t* wstr) {
 }
 
 /* Appends the textToInsert to the add buffer, returns the (offset) Position */
-Position writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert) {
+Position writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert, int *sizeOfCharOrNull) {
     if (sequence == NULL || textToInsert == NULL) {
         return -1; // Error: Invalid input
     }
 
     // Get the length of the text's UTF-8 representation in bytes
     size_t byteLength = getUtf8ByteSize(textToInsert);
+    
+    // If call requested this stat, give it here...
+    if (sizeOfCharOrNull != NULL){
+      *sizeOfCharOrNull = byteLength;
+    }
 
     // TODO: Maybe shrink the buffer if it unnecessarily large
 
@@ -312,13 +324,42 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
   if (sequence == NULL || textToInsert == NULL || position < 0){
     return -1; // Error
   }
+
+  int atomicSizeOfInsertion = -1;
   
   // Write the text to the add buffer and get the offset
-  int newlyWrittenBufferOffset = writeToAddBuffer(sequence, textToInsert);
+  int newlyWrittenBufferOffset = writeToAddBuffer(sequence, textToInsert, &atomicSizeOfInsertion);
   if (newlyWrittenBufferOffset == -1){
     ERR_PRINT("Insert failed at write to add buffer.\n");
     return -1;
+  } 
+
+  DEBG_PRINT("cond1:%d , cond2: %d",(position == _lastInsert._lastAtomicPos + _lastInsert._lastCharSize), (newlyWrittenBufferOffset == _lastInsert._lastWritePos +  _lastInsert._lastCharSize));
+
+  // Optimization case: if insert at last insert (and buffer) +1 position simply extend node to hold new insert as well.
+  if( (position == _lastInsert._lastAtomicPos + _lastInsert._lastCharSize) && (newlyWrittenBufferOffset == _lastInsert._lastWritePos +  _lastInsert._lastCharSize)){
+    NodeResult toExtend = getNodeForPosition(sequence, position-1);
+
+    //Ensure not operating in invalid node...
+    if (toExtend.node != NULL){
+      DEBG_PRINT("Insert now in optimized case.\n");
+      // Simply increase the valid range of the node to now also encompass the new insertion as well:
+      toExtend.node->size += 1;
+      // Save this insert's properties for comparison at next insert.
+      DEBG_PRINT("'Last Insert' follower set to:");
+      _lastInsert._lastAtomicPos = position;
+      _lastInsert._lastWritePos = newlyWrittenBufferOffset;
+      _lastInsert._lastCharSize = atomicSizeOfInsertion;
+      return 1;
+    }
   }
+  // Save this insert's properties for comparison at next insert.
+  DEBG_PRINT("Insert saved with size!%d, buffOfs:%d, atomPos:%d.\n", atomicSizeOfInsertion, newlyWrittenBufferOffset, position);
+  _lastInsert._lastAtomicPos = position;
+  _lastInsert._lastWritePos = newlyWrittenBufferOffset;
+  _lastInsert._lastCharSize = atomicSizeOfInsertion;
+
+
 
   // Create a new node for the inserted text
   DescriptorNode* newInsert = (DescriptorNode*) malloc(sizeof(DescriptorNode));
