@@ -238,35 +238,35 @@ int main(int argc, char *argv[]){
     
     // Main editor loop
     while (1) {
-        checkSizeChanged();
-        process_input();
+    checkSizeChanged();
+    process_input();
+    
+    if(refreshFlag){
+        erase(); // Clear screen to prevent artifacts
         
-        if(refreshFlag){
-            erase(); // Clear screen to prevent artifacts
-            
-            profilerStart();
-            // Render text if we have valid dimensions
-            if (activeSequence != NULL && lastGuiHeight > MENU_HEIGHT) {
-                int linesToRender = lastGuiHeight - MENU_HEIGHT;
-                if (linesToRender > 0) {
-                    print_items_after(topLineGeneralNbr, linesToRender);
-                }
+        profilerStart();
+        // Render text if we have valid dimensions
+        if (activeSequence != NULL && lastGuiHeight > MENU_HEIGHT) {
+            int linesToRender = lastGuiHeight - MENU_HEIGHT;
+            if (linesToRender > 0) {
+                print_items_after(topLineGeneralNbr, linesToRender);
             }
-            
-            // Draw status line
-            if (lastGuiHeight >= MENU_HEIGHT) {
-                mvprintw(lastGuiHeight - 1, getAbsoluteAtomicIndex(0,0,activeSequence), "Ln %d, Col %d   Ctrl-l to quit", cursorY + 1, cursorX + 1);
-                clrtoeol(); // Clear rest of status line
-            }
-            
-            // Position cursor back where it should be
-            move(cursorY, cursorX);
-            
-            refresh();
-            refreshFlag = false;
-            profilerStop("gui refresh");
         }
+        
+        // Draw status line
+        if (lastGuiHeight >= MENU_HEIGHT) {
+            mvprintw(lastGuiHeight - 1, 0, "Ln %d, Col %d   Ctrl-l to quit", cursorY + 1, cursorX + 1);
+            clrtoeol(); // Clear rest of status line
+        }
+        
+        // Position cursor back where it should be
+        move(cursorY, cursorX);
+        
+        refresh();
+        refreshFlag = false;
+        profilerStop("gui refresh");
     }
+}
 
     close_editor();
     return 0;
@@ -428,37 +428,50 @@ void process_input(void) {
             }
         }
         else if (wch == 10 || wch == 13) { // Enter key
-            if (activeSequence != NULL) {
-                int atomicPos = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
-                if (atomicPos >= 0) {
+        if (activeSequence != NULL) {
+            DEBG_PRINT("Enter pressed at cursor position (%d, %d)\n", cursorY, cursorX);
+            
+            int atomicPos = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
+            DEBG_PRINT("Calculated atomic position: %d\n", atomicPos);
+            
+            if (atomicPos >= 0) {
+                wchar_t toInsert[3];  // Buffer to hold the line ending
 
-                    wchar_t toInsert[3];  // Buffer to hold the line ending
-
-                    switch (getCurrentLineBstd()) {
-                        case LINUX:
-                            wcscpy(toInsert, L"\n");
-                            break;
-                        case MSDOS:
-                            wcscpy(toInsert, L"\r\n");
-                            break;
-                        case MAC:
-                            wcscpy(toInsert, L"\r");
-                            break;
-                        default:
-                            ERR_PRINT("Enter input could not be handled since line break std not properly initialized.\n");
-                            wcscpy(toInsert, L"");
-                    }
-                    if (insert(activeSequence, atomicPos, toInsert) > 0) {
-                        cursorY++;
-                        cursorX = 0;
-                        refreshFlag = true;
-                        
-                        // Invalidate line stats
-                        setLineStatsNotUpdated();
-                    }
+                switch (getCurrentLineBstd()) {
+                    case LINUX:
+                        wcscpy(toInsert, L"\n");
+                        break;
+                    case MSDOS:
+                        wcscpy(toInsert, L"\r\n");
+                        break;
+                    case MAC:
+                        wcscpy(toInsert, L"\r");
+                        break;
+                    default:
+                        ERR_PRINT("Enter input could not be handled since line break std not properly initialized.\n");
+                        wcscpy(toInsert, L"");
                 }
+                
+                DEBG_PRINT("Inserting line break at atomic position %d\n", atomicPos);
+                
+                if (insert(activeSequence, atomicPos, toInsert) > 0) {
+                    // Move cursor to the beginning of the new line
+                    cursorY++;
+                    cursorX = 0;
+                    refreshFlag = true;
+                    
+                        // Invalidate line stats
+                    setLineStatsNotUpdated();
+                    
+                    DEBG_PRINT("After Enter: cursor moved to (%d, %d)\n", cursorY, cursorX);
+                } else {
+                    ERR_PRINT("Failed to insert line break\n");
+                    }
+            } else {
+                ERR_PRINT("Failed to get atomic position for Enter key\n");
             }
         }
+    }
         else if (wch == 127 || wch == 8) { // Backspace
             if (activeSequence != NULL && (cursorX > 0 || cursorY > 0)) {
                 int atomicPos;

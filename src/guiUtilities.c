@@ -107,6 +107,7 @@ ReturnCode setAbsoluteLineNumber(int newLineNumber){
  */
 int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence){
     DEBG_PRINT("Calculating abs atomic index for: line%d, column%d...\n", relativeLine, charColumn);
+    
     // Check that request is valid in current data structure state: 
     for(int i = 0; i <= relativeLine; i++){
         if (lineStats.absolutePos[i] == -1){
@@ -115,7 +116,7 @@ int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence)
         }
     }
     
-    // quick access case:
+    // Quick access case: beginning of line
     if(charColumn == 0){
         return lineStats.absolutePos[relativeLine];
     } 
