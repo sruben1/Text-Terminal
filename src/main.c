@@ -81,21 +81,21 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
     int frozenLineStart = firstAtomic; // Stays set until line break or end of text for statistics
 
     while( currLineBcount < nbrOfLines ){
-        DEBG_PRINT("[Trace] : in main while loop, %p %d %d \n", activeSequence, currentLineBreakStd, currentLineBidentifier);
+        DEBG_PRINT("[Trace] : in main print while loop, %p %d %d \n", activeSequence, currentLineBreakStd, currentLineBidentifier);
         Atomic* currentItemBlock = NULL;
         if(requestNextBlock){
-            DEBG_PRINT("[Trace] : Consecutive block requested\n");
+            //DEBG_PRINT("[Trace] : Consecutive block requested\n");
             firstAtomic = firstAtomic + size; // since size == last index +1 no additional +1 needed.
             size = (int) getItemBlock(activeSequence, firstAtomic, &currentItemBlock);
-            DEBG_PRINT("The size value %d\n", size);
+            //DEBG_PRINT("The size value %d\n", size);
             if (size < 0){
                 return 2;
             }
             requestNextBlock = false;
         } else{
-            DEBG_PRINT("[Trace] : First block requested\n");
+            //DEBG_PRINT("[Trace] : First block requested\n");
             size = (int) getItemBlock(activeSequence, firstAtomic, &currentItemBlock);
-            DEBG_PRINT("The size value %d\n", size);
+            //DEBG_PRINT("The size value %d\n", size);
         }
         
 
@@ -107,7 +107,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
         int nbrOfUtf8CharsNoControlChars = 0;// If we want to ignore line breaks etc.
 
         while((currLineBcount < nbrOfLines) && !requestNextBlock){
-            DEBG_PRINT("handling atomic at index: %d, is : '%c' \n", (firstAtomic + currentSectionStart + offsetCounter), currentItemBlock[currentSectionStart + offsetCounter]);
+            //DEBG_PRINT("handling atomic at index: %d, is : '%c' \n", (firstAtomic + currentSectionStart + offsetCounter), currentItemBlock[currentSectionStart + offsetCounter]);
 
             if( (currentItemBlock[currentSectionStart + offsetCounter] & 0xC0) != 0x80 ){
                 // adds +1, if current atomic not == 10xxxxxx (see utf-8 specs):
@@ -174,7 +174,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
 
                     currLineBcount++;
 
-                    DEBG_PRINT("atomicsInLine: %d, nbrOfUtf8CharsInLine: %d, nbrOfUtf8CharsNoControlCharsInLine: %d\n", atomicsInLine, nbrOfUtf8CharsInLine, nbrOfUtf8CharsNoControlCharsInLine);
+                    //DEBG_PRINT("atomicsInLine: %d, nbrOfUtf8CharsInLine: %d, nbrOfUtf8CharsNoControlCharsInLine: %d\n", atomicsInLine, nbrOfUtf8CharsInLine, nbrOfUtf8CharsNoControlCharsInLine);
                     // Reset variables for next line:
                     atomicsInLine = 0;
                     frozenLineStart = firstAtomic + offsetCounter + 1;
@@ -185,7 +185,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                     atomicsInLine += offsetCounter+1;
                     nbrOfUtf8CharsInLine += nbrOfUtf8Chars;
                     nbrOfUtf8CharsNoControlCharsInLine += nbrOfUtf8CharsNoControlChars;
-                    DEBG_PRINT("Ported, current state: atomicsInLine: %d, nbrOfUtf8CharsInLine: %d, nbrOfUtf8CharsNoControlCharsInLine: %d\n", atomicsInLine, nbrOfUtf8CharsInLine, nbrOfUtf8CharsNoControlCharsInLine);
+                    //DEBG_PRINT("Ported, current state: atomicsInLine: %d, nbrOfUtf8CharsInLine: %d, nbrOfUtf8CharsNoControlCharsInLine: %d\n", atomicsInLine, nbrOfUtf8CharsInLine, nbrOfUtf8CharsNoControlCharsInLine);
                 }
                 currentSectionStart = currentSectionStart + offsetCounter + 1;
                 offsetCounter = -1;
@@ -194,7 +194,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
             }
             offsetCounter++;
             if((currentSectionStart + offsetCounter >= size)){
-                DEBG_PRINT("Setting flag for consecutive request\n");
+                //DEBG_PRINT("Setting flag for consecutive request\n");
                 requestNextBlock = true;
             }
         }   
