@@ -344,7 +344,7 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
     if (toExtend.node != NULL){
       DEBG_PRINT("Insert now in optimized case.\n");
       // Simply increase the valid range of the node to now also encompass the new insertion as well:
-      toExtend.node->size += 1;
+      toExtend.node->size += (long int) getUtf8ByteSize(textToInsert);
       // Save this insert's properties for comparison at next insert.
       DEBG_PRINT("'Last Insert' follower set to:");
       _lastInsert._lastAtomicPos = position;
