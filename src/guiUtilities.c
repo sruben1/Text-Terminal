@@ -66,7 +66,7 @@ int getUtfNoControlCharCount(int relativeLine){
  * Interface to invalidate current line statistics until first line is updated again. 
  */
 ReturnCode setLineStatsNotUpdated(){
-    DEBG_PRINT("Line stats set to not invalidated.\n");
+    DEBG_PRINT("Line stats set to invalidated.\n");
     lineStats.absolutePos[0] = -1;
     return 1;
 }
@@ -129,8 +129,9 @@ int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence)
     int rollingAtomicCount = 0;
     Atomic *currentItemBlock = NULL;
 
-    while (charCount < charColumn){
-        if(rollingAtomicCount >= (blockOffset + size)){
+    while (charCount < charColumn +1){
+        DEBG_PRINT("rollingAtmcCount:%d, blockOffs:%d, size:%d.\n", rollingAtomicCount, blockOffset, size);
+        if(rollingAtomicCount >= size){
             blockOffset = blockOffset + rollingAtomicCount;
             rollingAtomicCount = 0;
             DEBG_PRINT("Requesting next block in seek, at atomic:%d\n", lineStats.absolutePos[relativeLine] + blockOffset);
@@ -151,14 +152,17 @@ int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence)
             charCount++;
         }
 
-
-        if(currentItemBlock[rollingAtomicCount] == linBidentifier || currentItemBlock[rollingAtomicCount] == END_OF_TEXT_CHAR){
-            if (false /*Not last +1 requested...*/){
-                ERR_PRINT("Requested column:%d is beyond last legal char column:%d",charColumn, charCount + 1/*last +1*/ );
+        //DEBG_PRINT("Cond1:%d, Cond2:%d ;compared to:'%c'\n",(currentItemBlock[rollingAtomicCount] == linBidentifier), (currentItemBlock[rollingAtomicCount] == END_OF_TEXT_CHAR), currentItemBlock[rollingAtomicCount]);
+        if(/*rollingAtomicCount < size &&*/ (currentItemBlock[rollingAtomicCount] == linBidentifier || currentItemBlock[rollingAtomicCount] == END_OF_TEXT_CHAR)){
+            if (charColumn != charCount){/*Not last column +1 requested case: not comparing to +1 since while loop takin this +1 into account!...*/
+                ERR_PRINT("Requested column:%d is beyond last legal char column:%d",charColumn, charCount/*last +1*/ );
                 return -1;
             } else{
                 // Special case to allow moving cursor after the last char of the line.
+                DEBG_PRINT("In special last column +1\n");
+                rollingAtomicCount++; // Increment to keep return value consistency among different cases...
                 if(getCurrentLineBstd == MSDOS){
+                    DEBG_PRINT("Doing special MSDOS line break standard handling...\n");
                     // decrease atomic for return by 1 position to keep \r\n correctly contiguous.
                     rollingAtomicCount--;
                 }
@@ -167,45 +171,10 @@ int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence)
         } 
         rollingAtomicCount++;
     }
-    return lineStats.absolutePos[relativeLine] + blockOffset + rollingAtomicCount;
-    }
+    DEBG_PRINT("Atomic start of line:%d, blockOffs:%d, rollingAtomCont:%d\n",lineStats.absolutePos[relativeLine],blockOffset,rollingAtomicCount);
+    return lineStats.absolutePos[relativeLine] + blockOffset + rollingAtomicCount -1;
+}
     
-
-/*
-    while (charCount < charColumn){
-        if(rollingAtomicCount >= (blockOffset + size)){
-            blockOffset = blockOffset + rollingAtomicCount;
-            rollingAtomicCount = 0;
-            DEBG_PRINT("Requesting next block in seek, at atomic:%d\n", lineStats.absolutePos[relativeLine] + blockOffset);
-            Size size = getItemBlock(sequence, lineStats.absolutePos[relativeLine] + blockOffset, &currentItemBlock);
-            DEBG_PRINT("First New blockOffset=%d, size=%d\n", blockOffset, size);
-            if(size <= 0){
-                ERR_PRINT("Position determination failed (on block request for atomic:%d).\n", lineStats.absolutePos[relativeLine] + blockOffset);
-                return -1;
-            }
-            
-        }
-        DEBG_PRINT("Attempt readout char...\n");
-        DEBG_PRINT("seeking at char%d: '%c'\n", charCount, currentItemBlock[rollingAtomicCount]); 
-        if( ((currentItemBlock[rollingAtomicCount] & 0xC0) != 0x80) && (currentItemBlock[rollingAtomicCount] >= 0x20) ){
-            // If start of char UTF-8 char and not a control char:
-            DEBG_PRINT("Found char...\n");
-            charCount++;
-        }
-        
-        if(currentItemBlock[rollingAtomicCount] == linBidentifier || currentItemBlock[rollingAtomicCount] == END_OF_TEXT_CHAR){
-            if(charCount = charColumn){
-                DEBG_PRINT("Conversion returned last position in line (case2)...\n");
-                return blockOffset + rollingAtomicCount;
-            }
-            // found line end (char)
-            ERR_PRINT("Line shorter then requested column postion!\n");
-            return -1;
-        }
-        rollingAtomicCount++;
-    }
-    return blockOffset + rollingAtomicCount -1;*/
-
 /*
 ====================
     W-CHAR utilities:
