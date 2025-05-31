@@ -377,6 +377,7 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
 ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosition ){
   if (sequence == NULL || beginPosition < 0 || endPosition < beginPosition) {
     return -1; // Error
+    ERR_PRINT("Delete failed at security check.\n");
   }
 
   // Find the nodes for the given positions and check if a deletion is possible there

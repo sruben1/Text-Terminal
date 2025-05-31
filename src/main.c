@@ -29,6 +29,7 @@ LineBstd currentLineBreakStd = NO_INIT;
 LineBidentifier currentLineBidentifier = NONE_ID;
 
 static int cursorX = 0, cursorY = 0;
+static int cursorEndX = 0, cursorEndY = 0;
 static Position topLineGeneralNbr = 0;
 bool refreshFlag = true;
 
@@ -39,7 +40,8 @@ void init_editor(void);
 void close_editor(void);
 void checkSizeChanged(void);
 void process_input(void);
-void moveAndUpdateCursor();
+void changeAndUpdateCursor();
+void updateCursor();
 bool is_printable_unicode(wint_t wch);
 
 /*======== operations ========*/
@@ -344,176 +346,223 @@ void process_input(void) {
         
     if (status == KEY_CODE_YES) {
         // Function key pressed
+        int start = -1;
+        int end = -1;
         switch (wch){
             case KEY_UP:
                 DEBG_PRINT("[CURSOR]:UP\n");
-                if (cursorY > 0) {
-                    DEBG_PRINT("[CURSOR]:UP success\n");
-                    --cursorY;
-                    //in all cases limit to line size since line existence already ensured.
-                    cursorX = (cursorX < getUtfNoControlCharCount(cursorY)) ? cursorX : getUtfNoControlCharCount(cursorY);
-                    moveAndUpdateCursor();
-                }
+                changeAndUpdateCursor(0,-1);
                 break;
                 
             case KEY_DOWN:
                 DEBG_PRINT("[CURSOR]: DOWN\n");
-                if ((cursorY < lastGuiHeight - MENU_HEIGHT - 1) && (getTotalAmountOfRelativeLines() > cursorY + 1)) {
-                    DEBG_PRINT("[CURSOR]: DOWN success\n");
-                    cursorY++;
-                    if(getUtfNoControlCharCount(cursorY) > 0){
-                        cursorX = (cursorX < getUtfNoControlCharCount(cursorY)) ? cursorX : getUtfNoControlCharCount(cursorY);
-                    }
-                    moveAndUpdateCursor();
-                }
+                changeAndUpdateCursor(0,1);
                 break;
                 
             case KEY_LEFT:
                 DEBG_PRINT("[CURSOR]: LEFT\n");
-                if (cursorX > 0) {
-                    DEBG_PRINT("[CURSOR]: LEFT success\n");
-                    cursorX--;
-                    moveAndUpdateCursor();
-                } else if (cursorX == 0 && cursorY > 0){
-                    //go to previous line...
-                    cursorY--;
-                    cursorX = getUtfNoControlCharCount(cursorY);
-                    moveAndUpdateCursor();
-                }
+                changeAndUpdateCursor(-1,0);
                 break;
                 
-            case KEY_RIGHT: {
+            case KEY_RIGHT: 
                 DEBG_PRINT("[CURSOR]: RIGHT\n");
-                // Ensure cursorX is within bounds first
-                int lineLength = getUtfNoControlCharCount(cursorY);
-                cursorX = (cursorX < lineLength) ? cursorX : lineLength;
-                
-                if (cursorX < lineLength && cursorX < lastGuiWidth - 1) {
-                    DEBG_PRINT("[CURSOR]: RIGHT success\n");
-                    cursorX++;
-                    moveAndUpdateCursor();                    
-                } else if (cursorX == lineLength && cursorY + 1 < getTotalAmountOfRelativeLines()) {
-                    //go to next line...
-                    cursorX = 0;
-                    cursorY++;
-                    moveAndUpdateCursor();   
-                }                
+                changeAndUpdateCursor(1,0);              
                 break;
-            }
+            case KEY_BACKSPACE: // Backspace
+            case 8:
+                DEBG_PRINT("Processing 'BACKSPACE'\n");
+
+                // Calculation with range support:
+                if (cursorX == cursorEndX && cursorY == cursorEndY){
+                    if((cursorY > 0) && (cursorX == 0)){
+                        // Case of at begining of a line:
+                        start = getAbsoluteAtomicIndex(cursorY - 1, getUtfNoControlCharCount(cursorY -1) -1, activeSequence);
+                    } else if (!((cursorX == 0) && (cursorY == 0))){
+                        //all other valid cases:
+                        DEBG_PRINT("Backspace standard case...\n");
+                        start = getAbsoluteAtomicIndex(cursorY, cursorX -1, activeSequence);
+                    }  else{
+                        DEBG_PRINT("BACKSPACE invalid case...\n");
+                        break;
+                    }
+                    end = start;
+                } else{
+                    // TODO: Range case
+                }
+
+                DEBG_PRINT("cursor with: X:%d to %d; Y:%d to %d\n", cursorX, cursorEndX, cursorY, cursorEndY);
+                DEBG_PRINT("Backspace with atomics: %d to %d\n", start, end);
+                if(delete(activeSequence, start, end) < 0) {
+                    ERR_PRINT("Backspace failed...\n");
+                    break;
+                }
+
+                changeCursor(-1,0);
+                refreshFlag = true;
+                setLineStatsNotUpdated();
+                break;
+
+            case KEY_DC:// Delete (Backspace but for single char mirrored behavior).
+            case 127:
+                DEBG_PRINT("Processing 'DELETE'\n");
+
+                // Calculation with range support:
+                if (cursorX == cursorEndX && cursorY == cursorEndY){
+                    if((cursorY + 1 < getTotalAmountOfRelativeLines()) && (cursorX == getUtfNoControlCharCount(cursorY))){
+                        // Case of at end of a line:
+                        start = getAbsoluteAtomicIndex(cursorY + 1, 0, activeSequence);
+                    } else if (!((cursorY == getTotalAmountOfRelativeLines() -1) && (cursorX == getUtfNoControlCharCount(cursorY)))){
+                        //all other valid cases:
+                        start = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
+                    } else{
+                        DEBG_PRINT("DELETE invalid case...\n");
+                        break;
+                    }
+                    end = start;
+                } else{
+                    // TODO: Range case (identical to above)
+                }
+
+                DEBG_PRINT("cursor with: X:%d to %d; Y:%d to %d\n", cursorX, cursorEndX, cursorY, cursorEndY);
+                DEBG_PRINT("Delete with atomics: %d to %d\n", start, end);
+                if(delete(activeSequence, start, end) < 0) {
+                    ERR_PRINT("Delete failed...\n");
+                    break;
+                }
+
+                refreshFlag = true;
+                setLineStatsNotUpdated();
+                break;
             
             default:
                 break;
         }
     } 
     else if (status == OK) {
-        // Regular character input 
-        if (is_printable_unicode(wch) && activeSequence != NULL) {
-            // Get position for insertion
-            int atomicPos = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
-            if (atomicPos >= 0) {
-                // Convert single character to null-terminated wide string
-                
-                DEBG_PRINT("Inserting Unicode character: U+%04X '%lc' at position %d\n", 
-                          (unsigned int)wch, wch, atomicPos);
-                wchar_t convertedWchar[2];  // Wide string to hold the character + null terminator
-                convertedWchar[0] = (wchar_t)wch;
-                convertedWchar[1] = L'\0';
+        switch (wch) {
+            case KEY_ENTER: // Enter key
+            case 10:
+            case 13:
+                DEBG_PRINT("Enter pressed at cursor position (%d, %d)\n", cursorY, cursorX);
 
-                if (insert(activeSequence, atomicPos, convertedWchar) > 0) {
-                    cursorX++;
-                    refreshFlag = true;
-                    
-                    // Invalidate line stats since text changed
-                    setLineStatsNotUpdated();
-                }
-            } else {
-                DEBG_PRINT("Invalid atomic position for insert: %d\n", atomicPos);
-            }
-        }
-        else if (wch == 10 || wch == 13) { // Enter key
-        if (activeSequence != NULL) {
-            DEBG_PRINT("Enter pressed at cursor position (%d, %d)\n", cursorY, cursorX);
-            
-            int atomicPos = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
-            DEBG_PRINT("Calculated atomic position: %d\n", atomicPos);
-            
-            if (atomicPos >= 0) {
-                wchar_t toInsert[3];  // Buffer to hold the line ending
+                int atomicPos = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
+                DEBG_PRINT("Calculated atomic position: %d\n", atomicPos);
+                
+                if (atomicPos >= 0) {
+                    wchar_t toInsert[3];  // Buffer to hold the line ending
 
-                switch (getCurrentLineBstd()) {
-                    case LINUX:
-                        wcscpy(toInsert, L"\n");
-                        break;
-                    case MSDOS:
-                        wcscpy(toInsert, L"\r\n");
-                        break;
-                    case MAC:
-                        wcscpy(toInsert, L"\r");
-                        break;
-                    default:
-                        ERR_PRINT("Enter input could not be handled since line break std not properly initialized.\n");
-                        wcscpy(toInsert, L"");
-                }
-                
-                DEBG_PRINT("Inserting line break at atomic position %d\n", atomicPos);
-                
-                if (insert(activeSequence, atomicPos, toInsert) > 0) {
-                    // Move cursor to the beginning of the new line
-                    cursorY++;
-                    cursorX = 0;
-                    refreshFlag = true;
+                    switch (getCurrentLineBstd()) {
+                        case LINUX:
+                            wcscpy(toInsert, L"\n");
+                            break;
+                        case MSDOS:
+                            wcscpy(toInsert, L"\r\n");
+                            break;
+                        case MAC:
+                            wcscpy(toInsert, L"\r");
+                            break;
+                        default:
+                            ERR_PRINT("Enter input could not be handled since line break std not properly initialized.\n");
+                            wcscpy(toInsert, L"");
+                    }
                     
-                        // Invalidate line stats
-                    setLineStatsNotUpdated();
+                    DEBG_PRINT("Inserting line break at atomic position %d\n", atomicPos);
                     
-                    DEBG_PRINT("After Enter: cursor moved to (%d, %d)\n", cursorY, cursorX);
+                    if (insert(activeSequence, atomicPos, toInsert) > 0) {
+                        // Move cursor to the beginning of the new line
+                        cursorY++;
+                        cursorX = 0;
+                        refreshFlag = true;
+                        
+                            // Invalidate line stats
+                        setLineStatsNotUpdated();
+                        
+                        DEBG_PRINT("After Enter: cursor moved to (%d, %d)\n", cursorY, cursorX);
+                    } else {
+                        ERR_PRINT("Failed to insert line break\n");
+                        }
                 } else {
-                    ERR_PRINT("Failed to insert line break\n");
-                    }
-            } else {
-                ERR_PRINT("Failed to get atomic position for Enter key\n");
-            }
-        }
-    }
-        else if (wch == 127 || wch == 8) { // Backspace
-            if (activeSequence != NULL && (cursorX > 0 || cursorY > 0)) {
-                int atomicPos;
-                if (cursorX > 0) {
-                    atomicPos = getAbsoluteAtomicIndex(cursorY, cursorX - 1, activeSequence);
-                    if (atomicPos >= 0) {
-                        if (delete(activeSequence, atomicPos, atomicPos) > 0) { // Fixed: delete single character
-                            cursorX--;
-                            refreshFlag = true;
-                            setLineStatsNotUpdated();
-                        }
-                    }
-                } else if (cursorY > 0) {
-                    // Handle backspace at beginning of line
-                    int prevLineLength = getUtfNoControlCharCount(cursorY - 1);
-                    atomicPos = getAbsoluteAtomicIndex(cursorY, 0, activeSequence);
-                    if (atomicPos > 0) {
-                        if (delete(activeSequence, atomicPos - 1, atomicPos - 1) > 0) { // Fixed: delete single character
-                            cursorY--;
-                            cursorX = (prevLineLength > 0) ? prevLineLength : 0;
-                            refreshFlag = true;
-                            setLineStatsNotUpdated();
-                        }
-                    }
+                    ERR_PRINT("Failed to get atomic position for Enter key\n");
                 }
-            }
-        }
-        else {
-            // Log unhandled characters for debugging
-            DEBG_PRINT("Unhandled character input: U+%04X (decimal: %d)\n", 
-                      (unsigned int)wch, (int)wch);
+                break;
+            // Regular character input 
+            default:
+                if (is_printable_unicode(wch)) {
+                    // Get position for insertion
+                    int atomicPos = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
+                    if (atomicPos >= 0) {
+                        // Convert single character to null-terminated wide string
+                        
+                        DEBG_PRINT("Inserting Unicode character: U+%04X '%lc' at position %d\n", 
+                                (unsigned int)wch, wch, atomicPos);
+                        wchar_t convertedWchar[2];  // Wide string to hold the character + null terminator
+                        convertedWchar[0] = (wchar_t)wch;
+                        convertedWchar[1] = L'\0';
+                        
+                        if(cursorX != cursorEndX && cursorY != cursorEndX){
+                            
+                        }
+
+                        if (insert(activeSequence, atomicPos, convertedWchar) > 0) {
+                            cursorX++;
+                            cursorEndX == cursorEndX;
+                            refreshFlag = true;
+                            
+                            // Invalidate line stats since text changed
+                            setLineStatsNotUpdated();
+                        }
+                    } else {
+                        DEBG_PRINT("Invalid atomic position for insert: %d\n", atomicPos);
+                    }
+                }// Log unhandled case for debugging
+                else {
+                    DEBG_PRINT("Unhandled character input: U+%04X (decimal: %d)\n", (unsigned int)wch, (int)wch);
+                }
+                break;
         }
     }
 }
 
 /**
+ * Wrapper of 'moveAndUpdateCursor' to easily increment/decrement cursorX/Y variables and update. Resets any range states.
+ * Automatically jumps to next/previous line if legal to do so. 
+ */
+void changeCursor(int incrX, int incrY){
+    if(cursorY + incrY < getTotalAmountOfRelativeLines() && cursorY + incrY >= 0){
+        cursorY += incrY;
+    }
+    if(cursorX + incrX <= getUtfNoControlCharCount(cursorY) && cursorX + incrX >= 0){
+        cursorX += incrX;
+    } else if (cursorX + incrX > getUtfNoControlCharCount(cursorY) && cursorY +1 < getTotalAmountOfRelativeLines()){
+        cursorX = 0;
+        cursorEndY += 1;
+    } else if (cursorX + incrX < 0 && cursorY -1 >= 0){
+        cursorY += -1;
+        cursorX = getUtfNoControlCharCount(cursorY);
+    } else{
+        if(incrY != 0 && cursorEndX > getUtfNoControlCharCount(cursorY)){
+            cursorX = getUtfNoControlCharCount(cursorY);
+        }
+        DEBG_PRINT("Invalid case skipped in changeAndUpdateCursor, but range reset.\n");
+    }
+    cursorEndX = cursorX;
+    cursorEndY = cursorY;
+}
+/**
+ * Like changeCursor, but with update. 
+ * 
+ * Wrapper of 'moveAndUpdateCursor' to easily increment/decrement cursorX/Y variables and update. Resets any range states.
+ * Automatically jumps to next/previous line if legal to do so. 
+ */
+void changeAndUpdateCursor(int incrX, int incrY){
+    changeCursor(incrX, incrY);
+    updateCursor();
+}
+
+/**
  * Updates and moves the cursor state in most efficient manner. Uses the general internal cursorX/Y variables as new position.
  */
-void moveAndUpdateCursor(){
+void updateCursor(){
     // Just update stats in GUI...
     if (lastGuiHeight >= MENU_HEIGHT) {
         mvprintw(lastGuiHeight - 1, 0, "Ln %d, Col %d   Ctrl-l to quit", cursorY + 1, cursorX + 1);
