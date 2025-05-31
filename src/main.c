@@ -256,7 +256,7 @@ int main(int argc, char *argv[]){
         // Draw status line
         if (lastGuiHeight >= MENU_HEIGHT) {
             mvprintw(lastGuiHeight - 1, 0, "Ln %d, Col %d   Ctrl-l to quit", cursorY + 1, cursorX + 1);
-            clrtoeol(); // Clear rest of status line
+            //clrtoeol(); // Clear rest of status line
         }
         
         // Position cursor back where it should be
@@ -384,17 +384,20 @@ void process_input(void) {
                 
             case KEY_RIGHT: {
                 DEBG_PRINT("[CURSOR]: RIGHT\n");
-                if (cursorX < getUtfNoControlCharCount(cursorY) && cursorX < lastGuiWidth - 1) {
+                // Ensure cursorX is within bounds first
+                int lineLength = getUtfNoControlCharCount(cursorY);
+                cursorX = (cursorX < lineLength) ? cursorX : lineLength;
+                
+                if (cursorX < lineLength && cursorX < lastGuiWidth - 1) {
                     DEBG_PRINT("[CURSOR]: RIGHT success\n");
                     cursorX++;
                     moveAndUpdateCursor();                    
-                } else if (cursorX == getUtfNoControlCharCount(cursorY) && cursorY +1 < getTotalAmountOfRelativeLines()) {
+                } else if (cursorX == lineLength && cursorY + 1 < getTotalAmountOfRelativeLines()) {
                     //go to next line...
                     cursorX = 0;
                     cursorY++;
                     moveAndUpdateCursor();   
-                }
-                
+                }                
                 break;
             }
             
@@ -511,6 +514,11 @@ void process_input(void) {
  * Updates and moves the cursor state in most efficient manner. Uses the general internal cursorX/Y variables as new position.
  */
 void moveAndUpdateCursor(){
+    // Just update stats in GUI...
+    if (lastGuiHeight >= MENU_HEIGHT) {
+        mvprintw(lastGuiHeight - 1, 0, "Ln %d, Col %d   Ctrl-l to quit", cursorY + 1, cursorX + 1);
+        clrtoeol(); // Clear rest of status line
+    }
     move(cursorY, cursorX);
     refresh();
 }
