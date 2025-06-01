@@ -8,6 +8,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <sys/wait.h>  
+#include <unistd.h>
+
 #include "textStructure.h" // Interface to the central text datastructure 
 #include "guiUtilities.h" // Some utility backend used for the GUI
 #include "debugUtil.h" // For easy managmenet of logger and error messages
@@ -298,6 +301,323 @@ void init_editor(void) {
     updateLine(0, 0, 0);
     refreshFlag = true;
 }
+//paste
+ReturnCode pasteFromClipboard(Sequence* sequence, int cursorY, int cursorX) {
+    if (sequence == NULL) {
+        ERR_PRINT("Invalid sequence for paste operation\n");
+        return -1;
+    }
+    
+    char* clipboardText = getFromXclip();
+    if (clipboardText == NULL) {
+        ERR_PRINT("Failed to get text from clipboard\n");
+        return -1;
+    }
+    
+    // Convert UTF-8 to wide characters
+    size_t wcharCount = mbstowcs(NULL, clipboardText, 0);
+    if (wcharCount == (size_t)-1) {
+        ERR_PRINT("Invalid UTF-8 in clipboard text\n");
+        free(clipboardText);
+        return -1;
+    }
+    
+    wchar_t* wideText = malloc((wcharCount + 1) * sizeof(wchar_t));
+    if (wideText == NULL) {
+        ERR_PRINT("Failed to allocate memory for wide character conversion\n");
+        free(clipboardText);
+        return -1;
+    }
+    
+    mbstowcs(wideText, clipboardText, wcharCount + 1);
+    free(clipboardText);
+    
+    // Insert the text at cursor position
+    Position insertPos = getAbsoluteAtomicIndex(cursorY, cursorX, sequence);
+    if (insertPos < 0) {
+        ERR_PRINT("Failed to calculate insertion position\n");
+        free(wideText);
+        return -1;
+    }
+    
+    ReturnCode result = insert(sequence, insertPos, wideText);
+    free(wideText);
+    
+    return result;
+}
+
+/**
+ * Get text from xclip
+ */
+char* getFromXclip(void) {
+    int pipefd[2];
+    if (pipe(pipefd) == -1) {
+        ERR_PRINT("Failed to create pipe for xclip read\n");
+        return NULL;
+    }
+    
+    pid_t pid = fork();
+    if (pid == -1) {
+        ERR_PRINT("Failed to fork for xclip read\n");
+        close(pipefd[0]);
+        close(pipefd[1]);
+        return NULL;
+    }
+    
+    if (pid == 0) {
+        // Child - run xclip
+        close(pipefd[0]); 
+        dup2(pipefd[1], STDOUT_FILENO);
+        close(pipefd[1]);
+        
+        execl("/usr/bin/xclip", "xclip", "-selection", "clipboard", "-o", NULL);
+        _exit(1); 
+    } else {
+        // Parent - read  pipe
+        close(pipefd[1]); 
+        
+        char* buffer = malloc(4096);
+        if (buffer == NULL) {
+            ERR_PRINT("Failed to allocate buffer for clipboard read\n");
+            close(pipefd[0]);
+            waitpid(pid, NULL, 0);
+            return NULL;
+        }
+        
+        ssize_t totalRead = 0;
+        ssize_t bufferSize = 4096;
+        ssize_t bytesRead;
+        
+        while ((bytesRead = read(pipefd[0], buffer + totalRead, bufferSize - totalRead - 1)) > 0) {
+            totalRead += bytesRead;
+            
+            if (totalRead >= bufferSize - 1) {
+                bufferSize *= 2;
+                char* newBuffer = realloc(buffer, bufferSize);
+                if (newBuffer == NULL) {
+                    ERR_PRINT("Failed to reallocate buffer for clipboard read\n");
+                    free(buffer);
+                    close(pipefd[0]);
+                    waitpid(pid, NULL, 0);
+                    return NULL;
+                }
+                buffer = newBuffer;
+            }
+        }
+        
+        close(pipefd[0]);
+        
+        int status;
+        waitpid(pid, &status, 0);
+        
+        if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+            ERR_PRINT("xclip paste operation failed\n");
+            free(buffer);
+            return NULL;
+        }
+        
+        buffer[totalRead] = '\0';
+        return buffer;
+    }
+}
+
+ReturnCode copyToClipboard(Sequence* sequence, int startY, int startX, int endY, int endX) {
+    if (sequence == NULL) {
+        ERR_PRINT("Invalid sequence for copy operation\n");
+        return -1;
+    }
+    
+    Position startPos = getAbsoluteAtomicIndex(startY, startX, sequence);
+    Position endPos = getAbsoluteAtomicIndex(endY, endX, sequence);
+    
+    if (startPos < 0 || endPos < 0) {
+        ERR_PRINT("Failed to calculate absolute positions for copy\n");
+        return -1;
+    }
+        if (startPos > endPos) {
+        Position temp = startPos;
+        startPos = endPos;
+        endPos = temp;
+    }
+    
+    wchar_t* copiedText = extractTextRange(sequence, startPos, endPos);
+    if (copiedText == NULL) {
+        ERR_PRINT("Failed to extract text for copy\n");
+        return -1;
+    }
+    
+    size_t utf8Size = wcstombs(NULL, copiedText, 0);
+    if (utf8Size == (size_t)-1) {
+        ERR_PRINT("Failed to calculate UTF-8 size for copy\n");
+        free(copiedText);
+        return -1;
+    }
+    
+    char* utf8Text = malloc(utf8Size + 1);
+    if (utf8Text == NULL) {
+        ERR_PRINT("Failed to allocate memory for UTF-8 conversion\n");
+        free(copiedText);
+        return -1;
+    }
+    
+    wcstombs(utf8Text, copiedText, utf8Size + 1);
+    free(copiedText);
+    
+    // Send to xclip
+    ReturnCode result = sendToXclip(utf8Text);
+    free(utf8Text);
+    
+    return result;
+}
+
+/**
+ * Copy entire current line to clipboard
+ */
+ReturnCode copyCurrentLine(Sequence* sequence, int currentY) {
+    if (sequence == NULL || currentY < 0) {
+        ERR_PRINT("Invalid parameters for copy current line\n");
+        return -1;
+    }
+    
+    int lineLength = getUtfNoControlCharCount(currentY);
+    return copyToClipboard(sequence, currentY, 0, currentY, lineLength);
+}
+
+/**
+ * Extract text between abs positions
+ * Returns allocated wchar_t string must be freed
+ */
+wchar_t* extractTextRange(Sequence* sequence, Position startPos, Position endPos) {
+    if (sequence == NULL || startPos < 0 || endPos < startPos) {
+        return NULL;
+    }
+    
+    // Calculate total length needed
+    Position totalLength = endPos - startPos + 1;
+    int utf8CharCount = 0;
+    Position currentPos = startPos;
+    
+    // Count UTF-8 characters in range
+    while (currentPos <= endPos) {
+        Atomic* block = NULL;
+        Size blockSize = getItemBlock(sequence, currentPos, &block);
+        if (blockSize <= 0 || block == NULL) {
+            break;
+        }
+        
+        Size remainingInRange = endPos - currentPos + 1;
+        Size toProcess = (blockSize < remainingInRange) ? blockSize : remainingInRange;
+        
+        for (int i = 0; i < toProcess; i++) {
+            if ((block[i] & 0xC0) != 0x80) {
+                utf8CharCount++;
+            }
+        }
+        
+        currentPos += toProcess;
+    }
+    
+    if (utf8CharCount == 0) {
+        return NULL;
+    }
+    
+    // buffer for wide characters
+    wchar_t* result = malloc((utf8CharCount + 1) * sizeof(wchar_t));
+    if (result == NULL) {
+        ERR_PRINT("Failed to allocate memory for text extraction\n");
+        return NULL;
+    }
+    
+    // Extract actual text
+    currentPos = startPos;
+    Position resultPos = 0;
+    
+    while (currentPos <= endPos && resultPos < utf8CharCount) {
+        Atomic* block = NULL;
+        Size blockSize = getItemBlock(sequence, currentPos, &block);
+        if (blockSize <= 0 || block == NULL) {
+            break;
+        }
+        
+        Size remainingInRange = endPos - currentPos + 1;
+        Size toProcess = (blockSize < remainingInRange) ? blockSize : remainingInRange;
+        
+        // Convert this block to wide char
+        mbstate_t state = {0};
+        size_t atomicIdx = 0;
+        
+        while (atomicIdx < toProcess && resultPos < utf8CharCount) {
+            size_t parseLen = mbrtowc(&result[resultPos], (const char*)&block[atomicIdx], 
+                                      toProcess - atomicIdx, &state);
+            
+            if (parseLen == (size_t)-1) {
+                result[resultPos] = L'\uFFFD'; 
+                atomicIdx++;
+            } else if (parseLen == (size_t)-2) {
+                break; // Incomplete char
+            } else {
+                atomicIdx += parseLen;
+            }
+            resultPos++;
+        }
+        
+        currentPos += toProcess;
+    }
+    
+    result[resultPos] = L'\0';
+    return result;
+}
+
+
+/**
+ * Send UTF-8 text to xclip
+ */
+ReturnCode sendToXclip(const char* text) {
+    if (text == NULL) {
+        return -1;
+    }
+    
+    int pipefd[2];
+    if (pipe(pipefd) == -1) {
+        ERR_PRINT("Failed to create pipe for xclip\n");
+        return -1;
+    }
+    
+    pid_t pid = fork();
+    if (pid == -1) {
+        ERR_PRINT("Failed to fork for xclip\n");
+        close(pipefd[0]);
+        close(pipefd[1]);
+        return -1;
+    }
+    
+    if (pid == 0) {
+        // Child - run xclip
+        close(pipefd[1]); 
+        dup2(pipefd[0], STDIN_FILENO);
+        close(pipefd[0]);
+        
+        execl("/usr/bin/xclip", "xclip", "-selection", "clipboard", NULL);
+        _exit(1);
+    } else {
+        // Parent - write text to pipe
+        close(pipefd[0]); // Close read end
+        
+        size_t textLen = strlen(text);
+        ssize_t written = write(pipefd[1], text, textLen);
+        close(pipefd[1]);
+        
+        int status;
+        waitpid(pid, &status, 0);
+        
+        if (written != (ssize_t)textLen || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+            ERR_PRINT("xclip copy operation failed\n");
+            return -1;
+        }
+    }
+    
+    return 1;
+}
 
 void close_editor(void) {
     closeDebuggerFiles;
@@ -343,7 +663,60 @@ void process_input(void) {
         close_editor();
         exit(0);
     }
-        
+    // ctrl+p for paste 
+    if (status == OK && wch == CTRL_KEY('p')) {
+        DEBG_PRINT("Processing Ctrl+P (paste)\n");
+        if (pasteFromClipboard(activeSequence, cursorY, cursorX) > 0) {
+            DEBG_PRINT("Paste successful\n");
+            refreshFlag = true;
+            setLineStatsNotUpdated();
+            
+            if (lastGuiHeight >= MENU_HEIGHT) {
+                mvprintw(lastGuiHeight - 1, 0, "Text pasted   Ctrl-l to quit");
+                refresh();
+            }
+        } else {
+            ERR_PRINT("Failed to paste from clipboard\n");
+            if (lastGuiHeight >= MENU_HEIGHT) {
+                mvprintw(lastGuiHeight - 1, 0, "Paste failed   Ctrl-l to quit");
+                refresh();
+            }
+        }
+    }
+
+    // Ctrl+Y - Copy current line 
+    if (status == OK && wch == CTRL_KEY('y')) {
+        DEBG_PRINT("Processing Ctrl+Y (copy line)\n");
+        if (copyCurrentLine(activeSequence, cursorY) > 0) {
+            DEBG_PRINT("Line copied successfully\n");
+            // Optional: Show status message
+            if (lastGuiHeight >= MENU_HEIGHT) {
+                mvprintw(lastGuiHeight - 1, 0, "Line copied   Ctrl-l to quit");
+                refresh();
+                // Reset refresh flag so status shows briefly
+                refreshFlag = true;
+            }
+        } else {
+            ERR_PRINT("Failed to copy current line\n");
+        }
+    }
+    /** 
+    // Ctrl+U - Copy selection (implement text selection later)
+    if (status == OK && wch == CTRL_KEY('u')) {
+        DEBG_PRINT("Processing Ctrl+U (copy selection)\n");
+        // For now, copy current line since no selection is implemented
+        if (copyCurrentLine(activeSequence, cursorY) > 0) {
+            DEBG_PRINT("Selection copied successfully\n");
+            if (lastGuiHeight >= MENU_HEIGHT) {
+                mvprintw(lastGuiHeight - 1, 0, "Selection copied   Ctrl-l to quit");
+                refresh();
+                refreshFlag = true;
+            }
+        } else {
+            ERR_PRINT("Failed to copy selection\n");
+        }
+    }
+    */
     if (status == KEY_CODE_YES) {
         // Function key pressed
         int start = -1;
