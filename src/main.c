@@ -1028,6 +1028,7 @@ void relocateAndupdateCursorAndMenu(int newX, int newY){
  * Automatically jumps to next/previous line if legal to do so.  
  */
 void relocateCursorNoUpdate(int newX, int newY){
+    bool changedY = !(cursorY == newY);
     // Handle Y:
     int amtOfRelativeLines = getTotalAmountOfRelativeLines();
     if(newY < amtOfRelativeLines && newY >= 0){
@@ -1064,8 +1065,12 @@ void relocateCursorNoUpdate(int newX, int newY){
     } else if (newX > charCountAtY && cursorY +1 < amtOfRelativeLines){
         // Beyond line end:
         DEBG_PRINT("X Beyond line end case.\n");
-        cursorX = 0;
-        cursorY += 1;
+        if (!changedY){
+            cursorX = 0;
+            cursorY += 1;
+        } else {
+            cursorX = charCountAtY;
+        }
     } else if (newX < 0 && cursorY -1 >= 0){
         // Go to previous since before first char of line.
         DEBG_PRINT("X Beyond line start case.\n");
@@ -1097,21 +1102,23 @@ void changeRangeEndAndUpdate(int incrX, int incrY){
  * Automatically jumps to next/previous line if legal to do so. 
  */
 void relocateRangeEndAndUpdate(int newX, int newY){
+    DEBG_PRINT("Handling cursor RANGE, trying to go to rng end: X:%d Y:%d", newX, newY);
+    bool changedY = !(cursorY == newY);
     // Handle Y:
     int amtOfRelativeLines = getTotalAmountOfRelativeLines();
     if(newY < amtOfRelativeLines  && newY >= 0){
         // Standard case (x handled in next big if block):
-        cursorY = newY;
+        cursorEndY = newY;
     } else if (newY < 0){
         // Can't take negatives, just put at beginning:
-        cursorY = 0;
-        cursorX = 0;
+        cursorEndY = 0;
+        cursorEndX = 0;
         resetRangeSelectionState();
         return;
     } else if (newY >= amtOfRelativeLines) {
         // Special case of beyond last line:
-        cursorY = amtOfRelativeLines -1;
-        cursorX = getUtfNoControlCharCount(cursorY);
+        cursorEndY = amtOfRelativeLines -1;
+        cursorEndX = getUtfNoControlCharCount(cursorEndY);
         resetRangeSelectionState();
         return;
     } else {
@@ -1120,20 +1127,24 @@ void relocateRangeEndAndUpdate(int newX, int newY){
     }
 
     // Handle X (with respect to new Y): 
-    int charCountAtY = getUtfNoControlCharCount(cursorY);
+    int charCountAtY = getUtfNoControlCharCount(cursorEndY);
     if(newX <= charCountAtY && newX >= 0){
-        cursorX = newX;
-    } else if (newX > charCountAtY && cursorY +1 < amtOfRelativeLines){
+        cursorEndX = newX;
+    } else if (newX > charCountAtY && cursorEndY +1 < amtOfRelativeLines){
         // Beyond line end:
-        cursorX = 0;
-        cursorEndY += 1;
-    } else if (newX < 0 && cursorY -1 >= 0){
+        if(!changedY){
+            cursorEndX = 0;
+            cursorEndY += 1;
+        } else {
+            cursorEndX = charCountAtY;
+        }
+    } else if (newX < 0 && cursorEndY -1 >= 0){
         // Go to previous since before first char of line.
-        cursorY += -1;
-        cursorX = getUtfNoControlCharCount(cursorY);
+        cursorEndY += -1;
+        cursorEndX = getUtfNoControlCharCount(cursorEndY);
     } else{
         if(newX > charCountAtY){
-            cursorX = charCountAtY;
+            cursorEndX = charCountAtY;
         } else {
             DEBG_PRINT("Invalid case skipped in 'relocateRangeEndAndUpdate()', but update performed.\n");
         }
@@ -1263,7 +1274,7 @@ ReturnCode deleteCurrentSelectionRange(){
     if(!cursorNotInRangeSelectionState()){
         int startX = -1, endX = -1, startY = -1, endY = -1;
         getCurrentSelectionRang(&startX, &endX, &startY, &endY);
-        if (delete(activeSequence, getAbsoluteAtomicIndex(startY,startX,activeSequence), getAbsoluteAtomicIndex(endY,endX,activeSequence)) < 0 ){
+        if (delete(activeSequence, getAbsoluteAtomicIndex(startY,startX,activeSequence), getAbsoluteAtomicIndex(endY,endX,activeSequence)-1) < 0 ){
             ERR_PRINT("Failed to delete what's in selection range!\n");
             return -1;
         }
