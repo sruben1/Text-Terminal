@@ -739,17 +739,19 @@ void process_input(void) {
                     DEBG_PRINT("Handling MOUSE event.\n");
                     if (event.bstate & BUTTON1_CLICKED) {
                         if (event.y < lastGuiHeight - MENU_HEIGHT){
-                            // Text cursor case
-                            if (event.bstate & BUTTON_SHIFT){
-                                relocateRangeEndAndUpdate(event.x, event.y);
-                            } else{
+                            // Text cursor case:
                                 relocateAndupdateCursorAndMenu(event.x, event.y);
-                            }
-                        } 
-                    } else{
-                        // Menu interactions case:
+                        }  else{
+                            // Menu interactions case:
+
+                        }
+                    } 
+                    else if (event.bstate & BUTTON1_DOUBLE_CLICKED) {
+                        // Dragging end coordinates:
+                        DEBG_PRINT("Drag ended at: X:%d Y:%d",event.x, event.y);
+                        relocateRangeEndAndUpdate(event.x, event.y);
                     }
-                }   
+                }  
 
                 break;
             /*---- Standard Cursor ----*/
