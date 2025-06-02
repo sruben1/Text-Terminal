@@ -494,48 +494,43 @@ ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosit
 */
 
 void debugPrintInternalState(Sequence* sequence, bool showAddBuff, bool showFileBuff){
-  if(sequence->addBuffer.data != NULL){
-    DEBG_PRINT("AddBuff valid...\n");
-    DEBG_PRINT("AddBuff size: %d\n", (int) sequence->addBuffer.size);
-    DEBG_PRINT("AddBuff capacity: %d\n", (int) sequence->addBuffer.capacity);
+  DEBG_PRINT("--- INTERNAL STATE OF SEQUENCE ---\n");
+  if (sequence->addBuffer.data != NULL){
+    DEBG_PRINT("Add buffer valid. Size: %d, Capacity: %d.\n", (int) sequence->addBuffer.size, (int) sequence->addBuffer.capacity);
+  } else {
+    DEBG_PRINT("Add buffer is NULL.\n");
   }
-  if(sequence->fileBuffer.data != NULL){
-    DEBG_PRINT("FileBuff valid...\n");
-    DEBG_PRINT("FileBuff size: %d\n", (int) sequence->fileBuffer.size);
-    DEBG_PRINT("FileBuff capacity: %d\n", (int) sequence->fileBuffer.capacity);
+  if (sequence->fileBuffer.data != NULL){
+    DEBG_PRINT("File buffer valid. Size: %d, Capacity: %d.\n", (int) sequence->fileBuffer.size, (int) sequence->fileBuffer.capacity);
+  } else {
+    DEBG_PRINT("File buffer is NULL.\n");
   }
+  DEBG_PRINT("--- Piece Table ---\n");
   int summedPosition = 0;
-  int i = 0;
-  NodeResult nodeRes;
-  while(i >= 0){
-    nodeRes = getNodeForPosition(sequence, summedPosition);
-    if(nodeRes.startPosition == -1 || nodeRes.node == NULL){
-      DEBG_PRINT("Previous node likely the last one.\n");
-      i = -1;
-      break;
-    } else{
-      summedPosition += nodeRes.node->size;
-      if(showAddBuff && !nodeRes.node->isInFileBuffer){
-        DEBG_PRINT("Add buffer node found.\n");
-        DEBG_PRINT("Offset into add buff: %ld, corresponding size: %ld .\n", nodeRes.node->offset, nodeRes.node->size);
+  DescriptorNode* curr = sequence->pieceTable.first;
+  while (curr != NULL) {
+      summedPosition += curr->size;
+      if(showAddBuff && !curr->isInFileBuffer){
+        DEBG_PRINT("Offset into add buff: %ld, corresponding size: %ld.\n", curr->offset, curr->size);
       }
       if(showFileBuff){
         // TODO
       }
-    }
+      curr = curr->next_ptr;
   }
   if(showAddBuff && sequence->addBuffer.data != NULL){
-    DEBG_PRINT("Content of add buffer:\n|");
+    DEBG_PRINT("--- Content of add buffer ---\n|");
     for(int i = 0; i < (int) sequence->addBuffer.size; i++){
       DEBG_PRINT("%02X|", (uint8_t) sequence->addBuffer.data[i]);
     }
-    DEBG_PRINT("\n\n");
+    DEBG_PRINT("\n");
   }
   if(showFileBuff && sequence->fileBuffer.data != NULL){
-    DEBG_PRINT("Content of file buffer:\n|");
+    DEBG_PRINT("--- Content of file buffer ---\n|");
     for(int i = 0; i < (int) sequence->fileBuffer.size; i++){
       DEBG_PRINT("%02X|", (uint8_t) sequence->fileBuffer.data[i]);
     }
-    DEBG_PRINT("\n\n");
+    DEBG_PRINT("\n");
   }
+  DEBG_PRINT("----------------------------------\n");
 }
