@@ -40,9 +40,27 @@ void init_editor(void);
 void close_editor(void);
 void checkSizeChanged(void);
 void process_input(void);
-void changeAndUpdateCursor();
-void updateCursor();
 bool is_printable_unicode(wint_t wch);
+
+// Regular cursor mode:
+void changeAndupdateCursorAndMenu(int incrX, int incrY);
+void relocateAndupdateCursorAndMenu(int newX, int newY);
+// Range (more then 1 char) cursor mode:
+void changeRangeEndAndUpdate(int incrX, int incrY);
+void relocateRangeEndAndUpdate(int newX, int newY);
+void getCurrentSelectionRang(int* rtStartX, int* rtEndX, int* rtStartY, int* rtEndY);
+// State functions:
+bool cursorNotInRangeSelectionState();
+void resetRangeSelectionState();
+// Central function to always use when updating menu (cursor functions call it on their own as well).
+void updateCursorAndMenu();
+
+// Don't use unless you know what you're doing!
+void relocateCursorNoUpdate(int newX, int newY);
+
+// Helper functions:
+ReturnCode deleteCurrentSelectionRange();
+
 
 /*======== operations ========*/
 ReturnCode open_and_setup_file(char* file_path){
@@ -229,11 +247,8 @@ int main(int argc, char *argv[]){
     if (open_and_setup_file("TODO later") < 0) {
         ERR_PRINT("Failed to create empty sequence!\n");
         close_editor();
-        return 1;
+        return -1;
     }
-    
-    // Initialize line statistics for first (initial) iteration
-    updateLine(0, 0, 0);  // Line 0, at atomic position 0, with 0 characters
     
     // Get initial screen size
     getmaxyx(stdscr, lastGuiHeight, lastGuiWidth);
@@ -254,15 +269,8 @@ int main(int argc, char *argv[]){
                 print_items_after(topLineGeneralNbr, linesToRender);
             }
         }
-        
-        // Draw status line
-        if (lastGuiHeight >= MENU_HEIGHT) {
-            mvprintw(lastGuiHeight - 1, 0, "Ln %d, Col %d   Ctrl-l to quit", cursorY + 1, cursorX + 1);
-            //clrtoeol(); // Clear rest of status line
-        }
-        
-        // Position cursor back where it should be
-        move(cursorY, cursorX);
+        // Draws stats and position cursor back where it should be:
+        updateCursorAndMenu();
         
         refresh();
         refreshFlag = false;
@@ -294,7 +302,7 @@ void init_editor(void) {
         exit(EXIT_FAILURE);
     }
     
-    // Initialize first line stats
+    // Initialize line statistics for first (initial) iteration
     updateLine(0, 0, 0);
     refreshFlag = true;
 }
@@ -346,58 +354,69 @@ void process_input(void) {
         
     if (status == KEY_CODE_YES) {
         // Function key pressed
-        int start = -1;
-        int end = -1;
+        int pos = -1; // Used for delete and backspace
         switch (wch){
             case KEY_UP:
                 DEBG_PRINT("[CURSOR]:UP\n");
-                changeAndUpdateCursor(0,-1);
+                changeAndupdateCursorAndMenu(0,-1);
                 break;
                 
             case KEY_DOWN:
                 DEBG_PRINT("[CURSOR]: DOWN\n");
-                changeAndUpdateCursor(0,1);
+                changeAndupdateCursorAndMenu(0,1);
                 break;
                 
             case KEY_LEFT:
                 DEBG_PRINT("[CURSOR]: LEFT\n");
-                changeAndUpdateCursor(-1,0);
+                changeAndupdateCursorAndMenu(-1,0);
                 break;
                 
             case KEY_RIGHT: 
                 DEBG_PRINT("[CURSOR]: RIGHT\n");
-                changeAndUpdateCursor(1,0);              
+                changeAndupdateCursorAndMenu(1,0);              
                 break;
             case KEY_BACKSPACE: // Backspace
             case 8:
                 DEBG_PRINT("Processing 'BACKSPACE'\n");
 
                 // Calculation with range support:
-                if (cursorX == cursorEndX && cursorY == cursorEndY){
+                if (cursorNotInRangeSelectionState()){
                     if((cursorY > 0) && (cursorX == 0)){
                         // Case of at begining of a line:
-                        start = getAbsoluteAtomicIndex(cursorY - 1, getUtfNoControlCharCount(cursorY -1) -1, activeSequence);
+                        DEBG_PRINT("Backspace remove '\n' case...\n");
+                        pos = getAbsoluteAtomicIndex(cursorY,0, activeSequence)-1;
+                        DEBG_PRINT("Pos would have been: %d but now %d",pos +1, pos);
+                        //debugPrintInternalState(activeSequence, true, false);
+
+                        // so that automatically placed at previous line end:
+                        relocateCursorNoUpdate(-1, cursorY);
                     } else if (!((cursorX == 0) && (cursorY == 0))){
                         //all other valid cases:
                         DEBG_PRINT("Backspace standard case...\n");
-                        start = getAbsoluteAtomicIndex(cursorY, cursorX -1, activeSequence);
+                        pos = getAbsoluteAtomicIndex(cursorY, cursorX -1, activeSequence);
+
+                        // Reposition cursor:
+                        relocateCursorNoUpdate(cursorX-1, cursorY);
                     }  else{
                         DEBG_PRINT("BACKSPACE invalid case...\n");
                         break;
                     }
-                    end = start;
+
+                    DEBG_PRINT("Backspace with atomics: %d to %d\n", pos, pos);
+                    if(delete(activeSequence, pos, pos) < 0) {
+                        ERR_PRINT("Backspace failed...\n");
+                        break;
+                    }
+                    
+
                 } else{
-                    // TODO: Range case
+                    DEBG_PRINT("Backspace with: X:%d to %d; Y:%d to %d\n", cursorX, cursorEndX, cursorY, cursorEndY);
+                    if (deleteCurrentSelectionRange() < 0){
+                        ERR_PRINT("Aborted BACKSPACE due to range delete fail.\n");
+                        break;
+                    }
                 }
 
-                DEBG_PRINT("cursor with: X:%d to %d; Y:%d to %d\n", cursorX, cursorEndX, cursorY, cursorEndY);
-                DEBG_PRINT("Backspace with atomics: %d to %d\n", start, end);
-                if(delete(activeSequence, start, end) < 0) {
-                    ERR_PRINT("Backspace failed...\n");
-                    break;
-                }
-
-                changeCursor(-1,0);
                 refreshFlag = true;
                 setLineStatsNotUpdated();
                 break;
@@ -407,27 +426,34 @@ void process_input(void) {
                 DEBG_PRINT("Processing 'DELETE'\n");
 
                 // Calculation with range support:
-                if (cursorX == cursorEndX && cursorY == cursorEndY){
+                if (cursorNotInRangeSelectionState()){
                     if((cursorY + 1 < getTotalAmountOfRelativeLines()) && (cursorX == getUtfNoControlCharCount(cursorY))){
                         // Case of at end of a line:
-                        start = getAbsoluteAtomicIndex(cursorY + 1, 0, activeSequence);
+                        pos = getAbsoluteAtomicIndex(cursorY + 1, 0, activeSequence)-1;
+                        DEBG_PRINT("Pos would have been: %d but now %d",pos +1, pos);
+                        //debugPrintInternalState(activeSequence, true, false);
+
+                        // No cursor change/relocate needed due to behavior of DELETE.
                     } else if (!((cursorY == getTotalAmountOfRelativeLines() -1) && (cursorX == getUtfNoControlCharCount(cursorY)))){
-                        //all other valid cases:
-                        start = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
+                            //all other valid cases:
+                            DEBG_PRINT("Delete standard case...\n");
+                            pos = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
                     } else{
                         DEBG_PRINT("DELETE invalid case...\n");
                         break;
                     }
-                    end = start;
-                } else{
-                    // TODO: Range case (identical to above)
-                }
+                    DEBG_PRINT("Delete with atomics: %d to %d\n", pos, pos);
+                    if(delete(activeSequence, pos, pos) < 0) {
+                        ERR_PRINT("Delete failed...\n");
+                        break;
+                    }
 
-                DEBG_PRINT("cursor with: X:%d to %d; Y:%d to %d\n", cursorX, cursorEndX, cursorY, cursorEndY);
-                DEBG_PRINT("Delete with atomics: %d to %d\n", start, end);
-                if(delete(activeSequence, start, end) < 0) {
-                    ERR_PRINT("Delete failed...\n");
-                    break;
+                } else{
+                    DEBG_PRINT("Delete with: X:%d to %d; Y:%d to %d\n", cursorX, cursorEndX, cursorY, cursorEndY);
+                    if (deleteCurrentSelectionRange() < 0){
+                        ERR_PRINT("Aborted DELETE due to range delete fail.\n");
+                        break;
+                    }
                 }
 
                 refreshFlag = true;
@@ -435,6 +461,7 @@ void process_input(void) {
                 break;
             
             default:
+                DEBG_PRINT("Ignored character input: U+%04X (decimal: %d), name %s\n", (unsigned int)wch, (int)wch, keyname(wch));
                 break;
         }
     } 
@@ -445,6 +472,12 @@ void process_input(void) {
             case 13:
                 DEBG_PRINT("Enter pressed at cursor position (%d, %d)\n", cursorY, cursorX);
 
+                if(deleteCurrentSelectionRange() < 0){
+                    ERR_PRINT("Aborted ENTER insert due to range delete fail.\n");
+                    break;
+                }
+                // Set here already since at least delete succeeded: 
+                
                 int atomicPos = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
                 DEBG_PRINT("Calculated atomic position: %d\n", atomicPos);
                 
@@ -467,16 +500,12 @@ void process_input(void) {
                     }
                     
                     DEBG_PRINT("Inserting line break at atomic position %d\n", atomicPos);
-                    
+
                     if (insert(activeSequence, atomicPos, toInsert) > 0) {
-                        // Move cursor to the beginning of the new line
-                        cursorY++;
+                        // Exceptionally set it without safety in order to allow for leap of faith... 
                         cursorX = 0;
-                        refreshFlag = true;
-                        
-                            // Invalidate line stats
-                        setLineStatsNotUpdated();
-                        
+                        cursorY++;
+                        resetRangeSelectionState();
                         DEBG_PRINT("After Enter: cursor moved to (%d, %d)\n", cursorY, cursorX);
                     } else {
                         ERR_PRINT("Failed to insert line break\n");
@@ -484,10 +513,19 @@ void process_input(void) {
                 } else {
                     ERR_PRINT("Failed to get atomic position for Enter key\n");
                 }
+                refreshFlag = true;
+                setLineStatsNotUpdated();
                 break;
+
             // Regular character input 
             default:
                 if (is_printable_unicode(wch)) {
+                    // Ensure section state is correctly handled first:
+                    if(deleteCurrentSelectionRange() < 0){
+                        ERR_PRINT("Aborted INSERT to range delete fail.\n");
+                        break;
+                    }
+
                     // Get position for insertion
                     int atomicPos = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
                     if (atomicPos >= 0) {
@@ -499,77 +537,302 @@ void process_input(void) {
                         convertedWchar[0] = (wchar_t)wch;
                         convertedWchar[1] = L'\0';
                         
-                        if(cursorX != cursorEndX && cursorY != cursorEndX){
-                            
-                        }
 
                         if (insert(activeSequence, atomicPos, convertedWchar) > 0) {
+                            // Exceptionally set it without safety in order to allow for leap of faith... 
                             cursorX++;
-                            cursorEndX == cursorEndX;
-                            refreshFlag = true;
-                            
-                            // Invalidate line stats since text changed
-                            setLineStatsNotUpdated();
+                            resetRangeSelectionState();   
                         }
                     } else {
                         DEBG_PRINT("Invalid atomic position for insert: %d\n", atomicPos);
                     }
+                    refreshFlag = true;
+                    setLineStatsNotUpdated();
                 }// Log unhandled case for debugging
                 else {
-                    DEBG_PRINT("Unhandled character input: U+%04X (decimal: %d)\n", (unsigned int)wch, (int)wch);
+                    DEBG_PRINT("Ignored character input: U+%04X (decimal: %d), name %s\n", (unsigned int)wch, (int)wch, keyname(wch));
                 }
                 break;
         }
     }
 }
 
+
+/*
+=================
+  Cursor handling
+=================
+*/
+
+/* ----- Increment cursor -----*/
 /**
- * Wrapper of 'moveAndUpdateCursor' to easily increment/decrement cursorX/Y variables and update. Resets any range states.
+ * Function to easily and SAFELY increment/decrement by relative values (only +1 or -1 have good support) 
+ * (e.g. incrX has the internal effect: x = x + incrX) cursorX/Y variables and update. Resets any range states.
  * Automatically jumps to next/previous line if legal to do so. 
  */
-void changeCursor(int incrX, int incrY){
-    if(cursorY + incrY < getTotalAmountOfRelativeLines() && cursorY + incrY >= 0){
-        cursorY += incrY;
-    }
-    if(cursorX + incrX <= getUtfNoControlCharCount(cursorY) && cursorX + incrX >= 0){
-        cursorX += incrX;
-    } else if (cursorX + incrX > getUtfNoControlCharCount(cursorY) && cursorY +1 < getTotalAmountOfRelativeLines()){
-        cursorX = 0;
-        cursorEndY += 1;
-    } else if (cursorX + incrX < 0 && cursorY -1 >= 0){
-        cursorY += -1;
-        cursorX = getUtfNoControlCharCount(cursorY);
-    } else{
-        if(incrY != 0 && cursorEndX > getUtfNoControlCharCount(cursorY)){
-            cursorX = getUtfNoControlCharCount(cursorY);
-        }
-        DEBG_PRINT("Invalid case skipped in changeAndUpdateCursor, but range reset.\n");
-    }
-    cursorEndX = cursorX;
-    cursorEndY = cursorY;
+void changeAndupdateCursorAndMenu(int incrX, int incrY){
+    relocateAndupdateCursorAndMenu(cursorX + incrX, cursorY + incrY);
 }
+
+/* ----- Jump cursor -----*/
 /**
- * Like changeCursor, but with update. 
- * 
- * Wrapper of 'moveAndUpdateCursor' to easily increment/decrement cursorX/Y variables and update. Resets any range states.
- * Automatically jumps to next/previous line if legal to do so. 
+ * Function to easily and SAFELY reposition (jump) to specific X/Y coordinates in the text. Resets any range states.
+ * Automatically jumps to next/previous line if legal to do so.  
  */
-void changeAndUpdateCursor(int incrX, int incrY){
-    changeCursor(incrX, incrY);
-    updateCursor();
+void relocateAndupdateCursorAndMenu(int newX, int newY){
+    relocateCursorNoUpdate(newX, newY);
+
+    updateCursorAndMenu();
 }
 
 /**
- * Updates and moves the cursor state in most efficient manner. Uses the general internal cursorX/Y variables as new position.
+ * Don't use me unless you know what your're doing.
+ * 
+ * Function to easily and SAFELY reposition (jump) to specific X/Y coordinates in the text. Resets any range states.
+ * Automatically jumps to next/previous line if legal to do so.  
  */
-void updateCursor(){
-    // Just update stats in GUI...
-    if (lastGuiHeight >= MENU_HEIGHT) {
-        mvprintw(lastGuiHeight - 1, 0, "Ln %d, Col %d   Ctrl-l to quit", cursorY + 1, cursorX + 1);
-        clrtoeol(); // Clear rest of status line
+void relocateCursorNoUpdate(int newX, int newY){
+    // Handle Y:
+    int amtOfRelativeLines = getTotalAmountOfRelativeLines();
+    if(newY < amtOfRelativeLines && newY >= 0){
+        // Standard case (x handled in next big if block):
+        DEBG_PRINT("Y standard case.\n");
+        cursorY = newY;
+
+    } else if (newY < 0){
+        // Can't take negatives, just put at beginning:
+        DEBG_PRINT("Y beyond start case.\n");
+        cursorY = 0;
+        cursorX = 0;
+        resetRangeSelectionState();
+        return;
+
+    } else if (newY >= amtOfRelativeLines) {
+        // Special case of beyond last line:
+        DEBG_PRINT("Y beyond end case.\n");
+        cursorY = amtOfRelativeLines -1;
+        cursorX = getUtfNoControlCharCount(cursorY);
+        resetRangeSelectionState();
+        return;
+
+    } else {
+        ERR_PRINT("Unexpected, unhandled case in 'relocateCursor'\n");
+        return;
+    }
+
+    // Handle X (with respect to new Y): 
+    int charCountAtY = getUtfNoControlCharCount(cursorY);
+    if(newX <= charCountAtY && newX >= 0){
+        DEBG_PRINT("X standard case.\n");
+        cursorX = newX;
+    } else if (newX > charCountAtY && cursorY +1 < amtOfRelativeLines){
+        // Beyond line end:
+        DEBG_PRINT("X Beyond line end case.\n");
+        cursorX = 0;
+        cursorY += 1;
+    } else if (newX < 0 && cursorY -1 >= 0){
+        // Go to previous since before first char of line.
+        DEBG_PRINT("X Beyond line start case.\n");
+        cursorY += -1;
+        cursorX = getUtfNoControlCharCount(cursorY);
+    } else{
+        if(newX > charCountAtY){
+            DEBG_PRINT("X Special line end case.\n");
+            cursorX = charCountAtY;
+        } else {
+            DEBG_PRINT("Invalid case skipped in 'relocateCursor', but range reset & update performed.\n");
+        }
+    }
+    resetRangeSelectionState();
+}
+
+/* ----- Change cursor selection range -----*/
+
+/**
+ * Function to easily and SAFELY increment/decrement by relative values (e.g. incrX has the internal effect: x = x + incrX) cursorX/Y variables. Resets any range states.
+ * Automatically jumps to next/previous line if legal to do so. 
+ */
+void changeRangeEndAndUpdate(int incrX, int incrY){
+    relocateRangeEndAndUpdate(cursorEndX + incrX, cursorEndY + incrY);
+}
+
+/**
+ * Function to easily and SAFELY selected range.
+ * Automatically jumps to next/previous line if legal to do so. 
+ */
+void relocateRangeEndAndUpdate(int newX, int newY){
+    // Handle Y:
+    int amtOfRelativeLines = getTotalAmountOfRelativeLines();
+    if(newY < amtOfRelativeLines  && newY >= 0){
+        // Standard case (x handled in next big if block):
+        cursorY = newY;
+    } else if (newY < 0){
+        // Can't take negatives, just put at beginning:
+        cursorY = 0;
+        cursorX = 0;
+        resetRangeSelectionState();
+        return;
+    } else if (newY >= amtOfRelativeLines) {
+        // Special case of beyond last line:
+        cursorY = amtOfRelativeLines -1;
+        cursorX = getUtfNoControlCharCount(cursorY);
+        resetRangeSelectionState();
+        return;
+    } else {
+        ERR_PRINT("Unexpected, unhandled case in 'relocateRangeEndAndUpdate()'\n");
+        return;
+    }
+
+    // Handle X (with respect to new Y): 
+    int charCountAtY = getUtfNoControlCharCount(cursorY);
+    if(newX <= charCountAtY && newX >= 0){
+        cursorX = newX;
+    } else if (newX > charCountAtY && cursorY +1 < amtOfRelativeLines){
+        // Beyond line end:
+        cursorX = 0;
+        cursorEndY += 1;
+    } else if (newX < 0 && cursorY -1 >= 0){
+        // Go to previous since before first char of line.
+        cursorY += -1;
+        cursorX = getUtfNoControlCharCount(cursorY);
+    } else{
+        if(newX > charCountAtY){
+            cursorX = charCountAtY;
+        } else {
+            DEBG_PRINT("Invalid case skipped in 'relocateRangeEndAndUpdate()', but update performed.\n");
+        }
+    }
+    updateCursorAndMenu();
+}
+
+/**
+ * Function to automatically get correctly ordered start and end values of current selection range.
+ * Simply returns identical values if not in range section mode.
+ */
+void getCurrentSelectionRang(int* rtStartX, int* rtEndX, int* rtStartY, int* rtEndY){
+    if (cursorNotInRangeSelectionState()){
+        // Implicit case of not in range mode:
+        *rtStartX = cursorX;
+        *rtStartY = cursorY;
+        *rtEndX = cursorX;
+        *rtEndY = cursorY;
+        return;
+
+    } else{
+        if (cursorY < cursorEndY){
+            // Standard case:
+            *rtStartX = cursorX;
+            *rtStartY = cursorY;
+            *rtEndX = cursorEndX;
+            *rtEndY = cursorEndY;
+            return;
+
+        } else if (cursorY > cursorEndY){
+            // Inverse end and start...
+            *rtStartX = cursorEndX;
+            *rtStartY = cursorEndY;
+            *rtEndX = cursorX;
+            *rtEndY = cursorY;
+            return;
+
+        } else {
+            // Single line cases:
+            if (cursorX <= cursorEndX){
+                *rtStartX = cursorX;
+                *rtEndX = cursorEndX;
+                // Should be identical...
+                *rtEndY = cursorY;
+                *rtStartY = cursorY;
+                return;
+
+            } else {
+                *rtStartX = cursorEndX;
+                *rtEndX = cursorX;
+                // Should be identical...
+                *rtEndY = cursorY;
+                *rtStartY = cursorY;
+                return;
+            }
+        }
+    }
+}
+
+/**
+ * Updates and moves the cursor state in most efficient manner. 
+ * Uses the general internal cursorX/Y (and cursorEndX/Y) variables as new position without having to pass them here.
+ */
+void updateCursorAndMenu(){
+    // Update stats in GUI and if needed repaint the range...
+
+    // Remove previous range display:
+    for (int y = 0; y <= lastGuiHeight; y++){
+        mvchgat(y, 0, -1, A_NORMAL, 0, NULL); // -1 signifies: till end of gui line
+    }
+
+    if(cursorNotInRangeSelectionState()){
+        // Perform this to ensure correct ranges still ensured:
+        relocateCursorNoUpdate(cursorX,cursorY);
+
+        if (lastGuiHeight >= MENU_HEIGHT) {
+            mvprintw(lastGuiHeight - 1, 0, "Ln %d, Col %d   Ctrl-l to quit", cursorY + 1, cursorX + 1);
+            clrtoeol(); // Clear rest of status line
+        }
+    } else{
+
+        int startX = -1, startY = -1, endX = -1, endY = -1;
+        getCurrentSelectionRang(&startX, &endX, &startY, &endY);
+        if (startY == endY){
+            mvchgat(endY, startX, endX-startX, A_REVERSE, 0, NULL); // Format in inverted color scheme
+        } else{
+            mvchgat(startY, startX, -1, A_REVERSE, 0, NULL);
+            mvchgat(endY, 0, endX, A_REVERSE, 0, NULL);
+            for (int y = startY+1; y <= endY -1; y++){
+                mvchgat(y, 0, -1,A_REVERSE, 0, NULL);
+            }
+        }
+        
+        if (lastGuiHeight >= MENU_HEIGHT) {
+            mvprintw(lastGuiHeight - 1, 0, "Ln %d-%d, Col %d-%d   Ctrl-l to quit", cursorY + 1, cursorEndY +1, cursorX + 1, cursorEndX +1);
+            clrtoeol(); // Clear rest of status line
+        }
+
     }
     move(cursorY, cursorX);
     refresh();
+}
+
+/**
+ * Function to know if currently in range selection mode. 
+ * Use this every time range and normal selection modes need different handling.
+ */
+bool cursorNotInRangeSelectionState(){
+    return cursorX == cursorEndX && cursorY == cursorEndY;
+}
+
+/**
+ * Function to reset or update range to be equal to cursor.
+ */
+void resetRangeSelectionState(){
+    cursorEndX = cursorX;
+    cursorEndY = cursorY;
+    return;
+}
+
+/**
+ * Deletes what's in selection range and resets the selection state. If currently not in range state, call simply ignored.
+ * Does not call cursor update since usually used in cases where general refresh is done right after anyways.
+ */
+ReturnCode deleteCurrentSelectionRange(){
+    if(!cursorNotInRangeSelectionState()){
+        int startX = -1, endX = -1, startY = -1, endY = -1;
+        getCurrentSelectionRang(&startX, &endX, &startY, &endY);
+        if (delete(activeSequence, getAbsoluteAtomicIndex(startY,startX,activeSequence), getAbsoluteAtomicIndex(endY,endX,activeSequence)) < 0 ){
+            ERR_PRINT("Failed to delete what's in selection range!\n");
+            return -1;
+        }
+        relocateCursorNoUpdate(startX, startY);
+    }
+    return 1;
 }
 
 /*
