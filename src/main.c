@@ -244,6 +244,7 @@ int main(int argc, char *argv[]){
         return 1;
     } 
     DEBG_PRINT("Wide char type: %d\n",sizeof(wchar_t));
+    DEBG_PRINT("Wide int char type: %d\n",sizeof(wint_t));
 
     // Initialize ncurses first
     init_editor();
@@ -298,6 +299,7 @@ void init_editor(void) {
     
     // Get initial screen size
     getmaxyx(stdscr, lastGuiHeight, lastGuiWidth);
+    mousemask(ALL_MOUSE_EVENTS, NULL);
     
     // Validate screen size
     if (lastGuiHeight < 3 || lastGuiWidth < 10) {
@@ -731,6 +733,26 @@ void process_input(void) {
         int posStart = -1; // Used for delete and backspace
         int posEnd = -1; // Used for delete and backspace
         switch (wch){
+            case KEY_MOUSE: // All mouse handling here (menu buttons, mouse cursor interactions, etc.)
+                MEVENT event;
+                if (getmouse(&event) == OK) {
+                    DEBG_PRINT("Handling MOUSE event.\n");
+                    if (event.bstate & BUTTON1_CLICKED) {
+                        if (event.y < lastGuiHeight - MENU_HEIGHT){
+                            // Text cursor case
+                            if (event.bstate & BUTTON_SHIFT){
+                                relocateRangeEndAndUpdate(event.x, event.y);
+                            } else{
+                                relocateAndupdateCursorAndMenu(event.x, event.y);
+                            }
+                        } 
+                    } else{
+                        // Menu interactions case:
+                    }
+                }   
+
+                break;
+            /*---- Standard Cursor ----*/
             case KEY_UP:
                 DEBG_PRINT("[CURSOR]:UP\n");
                 changeAndupdateCursorAndMenu(0,-1);
@@ -750,6 +772,20 @@ void process_input(void) {
                 DEBG_PRINT("[CURSOR]: RIGHT\n");
                 changeAndupdateCursorAndMenu(1,0);              
                 break;
+             /*---- Range Cursor ----*/
+            case KEY_SRIGHT: // Shift right arrow
+                changeRangeEndAndUpdate(1,0);
+                break;
+            case KEY_SLEFT: // Shift left arrow
+                changeRangeEndAndUpdate(-1,0);
+                break;
+            case KEY_NPAGE: // Page up as select up
+                changeRangeEndAndUpdate(0,1);
+                break;
+            case KEY_PPAGE: // Page down as select down
+                changeRangeEndAndUpdate(0,-1);
+                break;
+             /*---- Backspace & Delete ----*/
             case KEY_BACKSPACE: // Backspace
             case 8:
                 DEBG_PRINT("Processing 'BACKSPACE'\n");
@@ -778,7 +814,8 @@ void process_input(void) {
                         //all other valid cases:
                         DEBG_PRINT("Backspace standard case...\n");
                         posStart = getAbsoluteAtomicIndex(cursorY, cursorX -1, activeSequence);
-                        posEnd = posStart;
+                        // Ensure multibyte case:
+                        posEnd = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence)-1;
                         // Reposition cursor:
                         relocateCursorNoUpdate(cursorX-1, cursorY);
                     } else{
@@ -830,7 +867,8 @@ void process_input(void) {
                             //all other valid cases:
                             DEBG_PRINT("Delete standard case...\n");
                             posStart = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
-                            posEnd = posStart;
+                            // Ensure multi byte support:
+                            posEnd = getAbsoluteAtomicIndex(cursorY, cursorX+1, activeSequence)-1;
                     } else{
                         DEBG_PRINT("DELETE invalid case...\n");
                         break;
