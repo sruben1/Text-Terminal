@@ -41,7 +41,6 @@ struct DescriptorNode{
 typedef struct{
   DescriptorNode *first;
   DescriptorNode *last; 
-  int length;
 } PieceTable;
 
 /* Buffer for storing text */
@@ -51,11 +50,15 @@ typedef struct{
   size_t capacity; // allocated space
 } Buffer;
 
+typedef struct OperationStack OperationStack; // Forward declaration for undo/redo stack
+
 /* Combined data structure */
 typedef struct {
   PieceTable pieceTable;
   Buffer fileBuffer;
   Buffer addBuffer;
+  OperationStack *undoStack;
+  OperationStack *redoStack;
 } Sequence;
 
 /*
@@ -93,10 +96,6 @@ ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosit
 
 ReturnCode copy( Sequence *sequence, Position fromBegin, Position fromEnd, Position toPosition );
 ReturnCode moveSequence( Sequence *sequence, Position fromBegin, Position fromEnd, Position toPosition );
-
-ReturnCode undo( Sequence *sequence);
-ReturnCode redo( Sequence *sequence);
-
 
 /*
 =============

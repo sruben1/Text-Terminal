@@ -12,6 +12,122 @@ typedef struct OperationStack {
     int size;
 } OperationStack;
 
+/*
+======================
+  Internal Utilities
+======================
+*/
+
+/**
+ * Helper function to undo an operation.
+ * This function should handle the logic of restoring the piece table
+ * Due to symmetry, this function can be used for both undo and redo operations.
+ * Returns the inverse operation or NULL if the operation cannot be undone.
+ */
+Operation* undoOperation(Sequence *sequence, Operation *operation) {
+    // Get the nodes at the start and end of the operation
+    DescriptorNode *first = operation->first;
+    DescriptorNode *oldNext = operation->oldNext;
+    DescriptorNode *last = operation->last;
+    DescriptorNode *oldPrev = operation->oldPrev;
+    free(operation); 
+    if (first == NULL || oldNext == NULL || last == NULL || oldPrev == NULL) {
+        ERR_PRINT("Invalid operation nodes for undo.\n");
+        return NULL;
+    }
+
+    // Create an inverse operation
+    Operation *inverse = (Operation*) malloc(sizeof(Operation));
+    if (inverse == NULL) {
+        ERR_PRINT("Failed to allocate memory for inverse operation.\n");
+        return NULL;
+    }
+    inverse->first = first;
+    inverse->oldNext = first->next_ptr; 
+    inverse->last = last;
+    inverse->oldPrev = last->prev_ptr;
+
+    // Restore the piece table by reconnecting the nodes
+    first->next_ptr = oldNext;
+    last->prev_ptr = oldPrev;
+
+    return inverse; 
+}
+
+/*
+========================
+  Undo/Redo Operations
+========================
+*/
+
+ReturnCode undo(Sequence *sequence) {
+    // Get undo stack and last operation
+    OperationStack *undoStack = sequence->undoStack;
+    if (undoStack == NULL || undoStack->size == 0) {
+        ERR_PRINT("Undo stack is empty or NULL.\n");
+        return 0; // Undefined
+    }
+    Operation *operation = popOperation(undoStack);
+    if (operation == NULL) {
+        ERR_PRINT("Failed to pop operation from undo stack.\n");
+        return 0; // Undefined
+    }
+
+    Operation* inverse = undoOperation(sequence, operation);
+
+    // Update the redo stack
+    OperationStack *redoStack = sequence->redoStack;
+    if (redoStack == NULL) {
+        ERR_PRINT("Redo stack is NULL.\n");
+        free(inverse);
+        return 0; // Undefined
+    }
+    if (pushOperation(redoStack, inverse) == 0) {
+        ERR_PRINT("Failed to push operation onto redo stack.\n");
+        free(inverse);
+        return 0; // Undefined
+    }
+
+    return 1; // Success
+}
+
+ReturnCode redo(Sequence *sequence) {
+    // Get redo stack and last operation
+    OperationStack *redoStack = sequence->redoStack;
+    if (redoStack == NULL || redoStack->size == 0) {
+        ERR_PRINT("Redo stack is empty or NULL.\n");
+        return 0; // Undefined
+    }
+    Operation *operation = popOperation(redoStack);
+    if (operation == NULL) {
+        ERR_PRINT("Failed to pop operation from redo stack.\n");
+        return 0; // Undefined
+    }
+
+    Operation* inverse = undoOperation(sequence, operation);
+
+    // Update the undo stack
+    OperationStack *undoStack = sequence->undoStack;
+    if (undoStack == NULL) {
+        ERR_PRINT("Undo stack is NULL.\n");
+        free(inverse);
+        return 0; // Undefined
+    }
+    if (pushOperation(undoStack, inverse) == 0) {
+        ERR_PRINT("Failed to push operation onto undo stack.\n");
+        free(inverse);
+        return 0; // Undefined
+    }
+
+    return 1; // Success
+}
+
+/*
+==============================
+  Undo/Redo Stack Management
+==============================
+*/
+
 OperationStack* createOperationStack() {
     OperationStack *stack = (OperationStack *)malloc(sizeof(OperationStack));
     if (stack == NULL) {
@@ -23,22 +139,24 @@ OperationStack* createOperationStack() {
     return stack;
 }
 
-void pushOperation(OperationStack *stack, Operation *operation) {
+ReturnCode pushOperation(OperationStack *stack, Operation *operation) {
     if (stack == NULL) {
         ERR_PRINT("Cannot push operation onto a NULL stack.\n");
-        return;
+        return 0;
     }
     
     OperationNode *newNode = (OperationNode *)malloc(sizeof(OperationNode));
     if (newNode == NULL) {
         ERR_PRINT("Failed to allocate memory for new operation node.\n");
-        return;
+        return 0;
     }
     
     newNode->operation = operation;
     newNode->next = stack->top;
     stack->top = newNode;
     stack->size++;
+
+    return 1; // Success
 }
 
 Operation* popOperation(OperationStack *stack) {
@@ -56,13 +174,17 @@ Operation* popOperation(OperationStack *stack) {
     return operation;
 }
 
-int isOperationStackEmpty(OperationStack *stack) {
-    return (stack == NULL || stack->top == NULL);
+int getOperationStackSize(OperationStack *stack) {
+    if (stack == NULL) {
+        ERR_PRINT("Cannot get size of a NULL stack.\n");
+        return -1; // Undefined
+    }
+    return stack->size;
 }
 
-void freeOperationStack(OperationStack *stack) {
+ReturnCode freeOperationStack(OperationStack *stack) {
     if (stack == NULL) {
-        return;
+        return 0;
     }
     
     OperationNode *current = stack->top;
@@ -74,5 +196,6 @@ void freeOperationStack(OperationStack *stack) {
     }
     
     free(stack);
+    return 1; // Success
 }
 

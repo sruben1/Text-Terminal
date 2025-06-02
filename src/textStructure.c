@@ -1,5 +1,6 @@
 // textStructure.c
 #include "textStructure.h"  
+#include "undoRedoUtilities.h"
 #include <wchar.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,12 +44,24 @@ LineBidentifier getCurrentLineBidentifier(){
 }
 
 Sequence* empty(){
-  // Create sequence and sentinel nodes
   Sequence *newSeq = (Sequence*) malloc(sizeof(Sequence));
+
+  // Initialize undo and redo stacks
+  newSeq->undoStack = createOperationStack();
+  newSeq->redoStack = createOperationStack();
+  if(newSeq->undoStack == NULL || newSeq->redoStack == NULL){
+    ERR_PRINT("Fatal malloc fail at empty sequence creation!\n");
+    free(newSeq);
+    return NULL;
+  }
+
+  // Create sentinel nodes for the piece table
   DescriptorNode* firstNode = (DescriptorNode*) malloc(sizeof(DescriptorNode));
   DescriptorNode* lastNode = (DescriptorNode*) malloc(sizeof(DescriptorNode));
   if(newSeq == NULL || firstNode == NULL || lastNode == NULL){
     ERR_PRINT("Fatal malloc fail at empty sequence creation!\n");
+    freeOperationStack(newSeq->undoStack);
+    freeOperationStack(newSeq->redoStack);
     free(newSeq);
     free(firstNode);
     free(lastNode);
@@ -69,13 +82,13 @@ Sequence* empty(){
   // Set values for the piece table and buffers
   newSeq->pieceTable.first = firstNode;
   newSeq->pieceTable.last = lastNode;
-  newSeq->pieceTable.length = 0;
   newSeq->fileBuffer.data = NULL;
   newSeq->fileBuffer.size = 0;
   newSeq->fileBuffer.capacity = 0;
   newSeq->addBuffer.data = NULL;
   newSeq->addBuffer.size = 0;
   newSeq->addBuffer.capacity = 0;
+
   return newSeq;
 }
 
@@ -108,6 +121,8 @@ Sequence* loadOrCreateNewFile( char *pathname ){
 */
 
 ReturnCode closeSequence( Sequence *sequence, bool forceFlag ){
+  freeOperationStack(sequence->undoStack);
+  freeOperationStack(sequence->redoStack);
   if(!forceFlag && currentlySaved == false){
     return -1;
   } 
@@ -350,11 +365,34 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
       free(newInsert);
       return -1; // Error: Invalid state
     }
+
+    // Save state for undo
+    Operation *operation = (Operation*) malloc(sizeof(Operation));
+    if (operation == NULL) {
+      ERR_PRINT("Fatal malloc fail at insert operation!\n");
+      free(newInsert);
+      return -1; // Error
+    }
+    operation->first = prev;
+    operation->oldNext = next;
+    operation->last = next;
+    operation->oldPrev = prev;
+    if (pushOperation(sequence->undoStack, operation) == 0) {
+      ERR_PRINT("Failed to push operation onto undo stack.\n");
+      free(newInsert);
+      free(operation);
+      return -1; // Error
+    }
+
+    // Reset the redo stack
+    freeOperationStack(sequence->redoStack);
+    sequence->redoStack = createOperationStack();
+
+    // Update the piece table
     prev->next_ptr = newInsert;
     newInsert->next_ptr = next;
     newInsert->prev_ptr = prev;
     next->prev_ptr = newInsert;
-    sequence->pieceTable.length += 1;
 
   } else {
     // Position is within an existing piece
@@ -380,6 +418,34 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
       free(newInsert);
       return -1;
     }
+
+    // Save the original node for undo
+    Operation *operation = (Operation*) malloc(sizeof(Operation));
+    if (operation == NULL) {
+      ERR_PRINT("Fatal malloc fail at insert operation!\n");
+      free(newInsert);
+      free(firstPart);
+      free(seccondPart);
+      return -1;
+    }
+    operation->first = foundNode->prev_ptr;
+    operation->oldNext = foundNode;
+    operation->last = foundNode->next_ptr;
+    operation->oldPrev = foundNode;
+    if (pushOperation(sequence->undoStack, operation) == 0) {
+      ERR_PRINT("Failed to push operation onto undo stack.\n");
+      free(newInsert);
+      free(firstPart);
+      free(seccondPart);
+      free(operation);
+      return -1; // Error
+    }
+
+    // Reset the redo stack
+    freeOperationStack(sequence->redoStack);
+    sequence->redoStack = createOperationStack();
+
+    // Set values for the new nodes
     firstPart->isInFileBuffer = foundNode->isInFileBuffer;
     firstPart->offset = foundNode->offset;
     firstPart->size = distanceInBlock;
@@ -396,7 +462,6 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
     seccondPart->next_ptr = foundNode->next_ptr;
     seccondPart->prev_ptr = newInsert;
     foundNode->next_ptr->prev_ptr = seccondPart;
-    sequence->pieceTable.length += 2;
   }
 
   return 1;
@@ -426,26 +491,31 @@ ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosit
     return -1;
   }
 
-  DEBG_PRINT("startNode: %d\n", startNode->offset);
-  DEBG_PRINT("endNode: %d\n", endNode->offset);
-
-  // TODO: Save the nodes for undo instead of deleting them immediately
-  if (startNode != endNode) {
-    DescriptorNode* curr = startNode->next_ptr;
-    while (curr != endNode) {
-      DescriptorNode* next = curr->next_ptr;
-      free(curr);
-      curr = next;
-      sequence->pieceTable.length -= 1;
-    }
+  // Save the original nodes for undo
+  Operation *operation = (Operation*) malloc(sizeof(Operation));
+  if (operation == NULL) {
+    ERR_PRINT("Fatal malloc fail at delete operation!\n");
+    return -1; // Error
+  }
+  operation->first = startNode->prev_ptr;
+  operation->oldNext = startNode;
+  operation->last = endNode->next_ptr;
+  operation->oldPrev = endNode;
+  if (pushOperation(sequence->undoStack, operation) == 0) {
+    ERR_PRINT("Failed to push operation onto undo stack.\n");
+    free(operation);
+    return -1; // Error
   }
 
+  // Reset the redo stack
+  freeOperationStack(sequence->redoStack);
+  sequence->redoStack = createOperationStack();
+
+  // Determine the new start node after deletion
   DescriptorNode* newStartNode;
   if (distanceInStartBlock == 0) { 
     // Deletion includes the first character of the start node => use previous node instead
     newStartNode = startNode->prev_ptr;
-    // TODO: Add startNode to undo stack
-    sequence->pieceTable.length -= 1;
   } else {
     // Create a new node which includes everything up to the beginning of the deletion
     newStartNode = (DescriptorNode*) malloc(sizeof(DescriptorNode));
@@ -461,12 +531,11 @@ ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosit
     startNode = newStartNode; 
   }
   
+  // Determine the new end node after deletion
   DescriptorNode* newEndNode;
   if (distanceInEndBlock + 1 == endNode->size) { 
     // Deletion includes the last character of the end node => use next node instead
     newEndNode = endNode->next_ptr;
-    // TODO: Add endNode to undo stack
-    sequence->pieceTable.length -= 1;
   } else {
     // Create a new node which includes everything after the end of the deletion
     newEndNode = (DescriptorNode*) malloc(sizeof(DescriptorNode));
@@ -505,6 +574,8 @@ void debugPrintInternalState(Sequence* sequence, bool showAddBuff, bool showFile
   } else {
     DEBG_PRINT("File buffer is NULL.\n");
   }
+  DEBG_PRINT("Undo stack size: %d, Redo stack size: %d.\n", getOperationStackSize(sequence->undoStack), getOperationStackSize(sequence->redoStack));
+
   DEBG_PRINT("--- Piece Table ---\n");
   int summedPosition = 0;
   DescriptorNode* curr = sequence->pieceTable.first;
