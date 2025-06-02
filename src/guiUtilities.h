@@ -1,11 +1,30 @@
 #ifndef GUIUTILITIES_H
 #define GUIUTILITIES_H
+
+#ifndef CLIPBOARD_H
+
+#define CLIPBOARD_H
 #include <stdbool.h> 
 #include <wchar.h>
 #include <string.h>
 
 #include "textStructure.h"
 
+/*
+==================================
+   copy paste stuff 
+==================================
+*/
+ReturnCode pasteFromClipboard(Sequence* sequence, int cursorY, int cursorX);
+char* getFromXclip(void);
+
+#endif // CLIPBOARD_H
+
+// Copy functions
+ReturnCode copyToClipboard(Sequence* sequence, int startY, int startX, int endY, int endX);
+ReturnCode copyCurrentLine(Sequence* sequence, int currentY);
+wchar_t* extractTextRange(Sequence* sequence, Position startPos, Position endPos);
+ReturnCode sendToXclip(const char* text);
 /*
 ==================================
     Line statistics data structure: 
