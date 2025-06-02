@@ -240,6 +240,7 @@ int main(int argc, char *argv[]){
         ERR_PRINT("Fatal error: failed to set LOCALE to UTF-8!\n");
         return 1;
     } 
+    DEBG_PRINT("Wide char type: %d\n",sizeof(wchar_t));
 
     // Initialize ncurses first
     init_editor();
@@ -354,7 +355,8 @@ void process_input(void) {
         
     if (status == KEY_CODE_YES) {
         // Function key pressed
-        int pos = -1; // Used for delete and backspace
+        int posStart = -1; // Used for delete and backspace
+        int posEnd = -1; // Used for delete and backspace
         switch (wch){
             case KEY_UP:
                 DEBG_PRINT("[CURSOR]:UP\n");
@@ -383,9 +385,18 @@ void process_input(void) {
                 if (cursorNotInRangeSelectionState()){
                     if((cursorY > 0) && (cursorX == 0)){
                         // Case of at begining of a line:
-                        DEBG_PRINT("Backspace remove '\n' case...\n");
-                        pos = getAbsoluteAtomicIndex(cursorY,0, activeSequence)-1;
-                        DEBG_PRINT("Pos would have been: %d but now %d",pos +1, pos);
+                        if(!(getCurrentLineBstd() == MSDOS)){
+                            DEBG_PRINT("Backspace remove '\n' case...\n");
+                            posStart = getAbsoluteAtomicIndex(cursorY,0, activeSequence)-1;
+                            DEBG_PRINT("Pos would have been: %d but now %d",posStart +1, posStart);
+                            posEnd = posStart;
+                        } else{
+                            //special MSDOS handling:
+                            DEBG_PRINT("Backspace remove '\r\n' case...\n");
+                            posStart = getAbsoluteAtomicIndex(cursorY,0, activeSequence)-2;
+                            DEBG_PRINT("(MSDOS); Pos would have been: %d but now %d",posStart +2, posStart);
+                            posEnd = posStart+1;
+                        }
                         //debugPrintInternalState(activeSequence, true, false);
 
                         // so that automatically placed at previous line end:
@@ -393,21 +404,20 @@ void process_input(void) {
                     } else if (!((cursorX == 0) && (cursorY == 0))){
                         //all other valid cases:
                         DEBG_PRINT("Backspace standard case...\n");
-                        pos = getAbsoluteAtomicIndex(cursorY, cursorX -1, activeSequence);
-
+                        posStart = getAbsoluteAtomicIndex(cursorY, cursorX -1, activeSequence);
+                        posEnd = posStart;
                         // Reposition cursor:
                         relocateCursorNoUpdate(cursorX-1, cursorY);
-                    }  else{
+                    } else{
                         DEBG_PRINT("BACKSPACE invalid case...\n");
                         break;
                     }
 
-                    DEBG_PRINT("Backspace with atomics: %d to %d\n", pos, pos);
-                    if(delete(activeSequence, pos, pos) < 0) {
+                    DEBG_PRINT("Backspace with atomics: %d to %d\n", posStart, posEnd);
+                    if(delete(activeSequence, posStart, posEnd) < 0) {
                         ERR_PRINT("Backspace failed...\n");
                         break;
                     }
-                    
 
                 } else{
                     DEBG_PRINT("Backspace with: X:%d to %d; Y:%d to %d\n", cursorX, cursorEndX, cursorY, cursorEndY);
@@ -428,22 +438,32 @@ void process_input(void) {
                 // Calculation with range support:
                 if (cursorNotInRangeSelectionState()){
                     if((cursorY + 1 < getTotalAmountOfRelativeLines()) && (cursorX == getUtfNoControlCharCount(cursorY))){
-                        // Case of at end of a line:
-                        pos = getAbsoluteAtomicIndex(cursorY + 1, 0, activeSequence)-1;
-                        DEBG_PRINT("Pos would have been: %d but now %d",pos +1, pos);
-                        //debugPrintInternalState(activeSequence, true, false);
+                        if(!(getCurrentLineBstd() == MSDOS)){
+                            // Case of at end of a line:
+                            posStart = getAbsoluteAtomicIndex(cursorY + 1, 0, activeSequence)-1;
+                            posEnd = posStart;
+                            DEBG_PRINT("Pos would have been: %d but now %d",posStart +1, posStart);
+                            //debugPrintInternalState(activeSequence, true, false);
+                        } else{
+                            //special MSDOS handling:
+                            posStart = getAbsoluteAtomicIndex(cursorY + 1, 0, activeSequence)-2;
+                            posEnd = posStart+1;
+                            DEBG_PRINT("(MSDOS); Pos would have been: %d but now %d",posStart +2, posStart);
+                            //debugPrintInternalState(activeSequence, true, false);
+                        }
 
                         // No cursor change/relocate needed due to behavior of DELETE.
                     } else if (!((cursorY == getTotalAmountOfRelativeLines() -1) && (cursorX == getUtfNoControlCharCount(cursorY)))){
                             //all other valid cases:
                             DEBG_PRINT("Delete standard case...\n");
-                            pos = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
+                            posStart = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
+                            posEnd = posStart;
                     } else{
                         DEBG_PRINT("DELETE invalid case...\n");
                         break;
                     }
-                    DEBG_PRINT("Delete with atomics: %d to %d\n", pos, pos);
-                    if(delete(activeSequence, pos, pos) < 0) {
+                    DEBG_PRINT("Delete with atomics: %d to %d\n", posStart, posStart);
+                    if(delete(activeSequence, posStart, posEnd) < 0) {
                         ERR_PRINT("Delete failed...\n");
                         break;
                     }
@@ -520,6 +540,7 @@ void process_input(void) {
             // Regular character input 
             default:
                 if (is_printable_unicode(wch)) {
+                    DEBG_PRINT("STANDARD INSERT:\n");
                     // Ensure section state is correctly handled first:
                     if(deleteCurrentSelectionRange() < 0){
                         ERR_PRINT("Aborted INSERT to range delete fail.\n");
@@ -531,8 +552,8 @@ void process_input(void) {
                     if (atomicPos >= 0) {
                         // Convert single character to null-terminated wide string
                         
-                        DEBG_PRINT("Inserting Unicode character: U+%04X '%lc' at position %d\n", 
-                                (unsigned int)wch, wch, atomicPos);
+                        DEBG_PRINT("Inserting Unicode character: U+%04X '%lc' at position %d\n", (unsigned int)wch, wch, atomicPos);
+                        DEBG_PRINT("The character width: %d", wcwidth(wch));
                         wchar_t convertedWchar[2];  // Wide string to hold the character + null terminator
                         convertedWchar[0] = (wchar_t)wch;
                         convertedWchar[1] = L'\0';
@@ -571,6 +592,10 @@ void process_input(void) {
  * Automatically jumps to next/previous line if legal to do so. 
  */
 void changeAndupdateCursorAndMenu(int incrX, int incrY){
+    /*Debugging*/
+    DEBG_PRINT("Atomic position of cursor calc:%d\n", getAbsoluteAtomicIndex(cursorY + incrY,cursorX + incrX, activeSequence));
+    //debugPrintInternalState(activeSequence, true,false);
+    /*Debugging end*/
     relocateAndupdateCursorAndMenu(cursorX + incrX, cursorY + incrY);
 }
 
@@ -797,6 +822,7 @@ void updateCursorAndMenu(){
         }
 
     }
+    DEBG_PRINT("Ncurses cursor moved to X:%d, Y:%d\n", cursorEndX, cursorEndY);
     move(cursorY, cursorX);
     refresh();
 }
