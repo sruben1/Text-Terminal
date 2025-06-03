@@ -7,7 +7,6 @@
     Line statistics data structure: 
 ==================================
 */
-
 // Data structure for currently shown lines' statistics.
 typedef struct {
     // Currently shown upper most line's line number counted from the very beginning of text:
@@ -22,6 +21,11 @@ LineStats lineStats = {
     .charCount = {[0 ... 74] = 0},
     .absolutePos = {[0 ... 74] = -1}
 };
+
+// For horizontal scrolling:
+static int _horizontalScreenOffset = 0;
+
+static int _portTopIdxForNext = 0;
 
 /**
  * Returns the absolute line nbr from the very start, of a specific screen line.
@@ -67,6 +71,7 @@ int getUtfNoControlCharCount(int relativeLine){
  */
 ReturnCode setLineStatsNotUpdated(){
     DEBG_PRINT("Line stats set to invalidated.\n");
+    _portTopIdxForNext = lineStats.absolutePos[0];
     lineStats.absolutePos[0] = -1;
     return 1;
 }
@@ -78,16 +83,44 @@ ReturnCode updateLine(int relativeLineNumber, int absoluteGeneralAtomicPosition 
     DEBG_PRINT("[Line Stats] : Updated line nbr %d to Atomic Idx: %d, charCount: %d.\n", relativeLineNumber, absoluteGeneralAtomicPosition, nbrOfUtf8CNoControlChars);
     lineStats.absolutePos[relativeLineNumber] = absoluteGeneralAtomicPosition;
     lineStats.charCount[relativeLineNumber] = nbrOfUtf8CNoControlChars;
+    lineStats.absolutePos[relativeLineNumber +1] = -1;
+    lineStats.charCount[relativeLineNumber +1] = -1;
     return 1;
 }
 
 /**
  * Function to call when scrolling.
- *  requires full update of statistics afterwards since operation invalidates internal state.
+ *  requires full update of statistics afterwards since operation invalidates internal state,
+ *  except for first relative screen line due to need of leap of faith. 
  */
-ReturnCode moveAbsoluteLineNumbers(int addOrSubstract){
+ReturnCode moveAbsoluteLineNumbers(int addOrSubstractOne){
+    if (addOrSubstractOne > 0){
+        if(getTotalAmountOfRelativeLines() > 1){
+            if (lineStats.absolutePos[1] != -1){
+            lineStats.topMostLineNbr++;
+            // Leap of faith:
+            _portTopIdxForNext = lineStats.absolutePos[1];
+            } else{
+                ERR_PRINT("Failed to scroll down, internal state issue...\n");
+                // try to recover from bad state...
+                _portTopIdxForNext = 0;
+            }
+            
+        } else{
+            ERR_PRINT("Scroll down illegal!\n");
+            return -1;
+        }
+    } else if (addOrSubstractOne < 0){
+        if (lineStats.absolutePos[0] > 0){
+            _portTopIdxForNext = backTrackToFirstAtomicInLine(lineStats.absolutePos[0]);
+        } else{
+            ERR_PRINT("Scroll up illegal!\n");
+            return -1;
+        }
+    }else{
+        // ignore
+    }
     setLineStatsNotUpdated();
-    lineStats.topMostLineNbr += addOrSubstract;
     return 1;
 }
 
@@ -95,11 +128,52 @@ ReturnCode moveAbsoluteLineNumbers(int addOrSubstract){
  * Function to call when jumping to specific line. Counting line numbers form 0. 
  *  requires full update of statistics afterwards since operation invalidates internal state.
  */
-ReturnCode setAbsoluteLineNumber(int newLineNumber){
+ReturnCode jumpAbsoluteLineNumber(int newTopLineNumber, int atomicIdxOfTop){
+    lineStats.topMostLineNbr = newTopLineNumber;
+    // leap of faith for next print:
+    _portTopIdxForNext = atomicIdxOfTop;
     setLineStatsNotUpdated();
-    lineStats.topMostLineNbr = newLineNumber;
     return 1;
 }
+
+/**
+ * Returns the current horizontal scrolling state, returns integer >= 0. 
+ */
+int getCurrHorizontalScrollOffset(){
+    return _horizontalScreenOffset;
+}
+
+/**
+ * Used to increment the current horizontal scrolling value, returns 1 on success, -1 on fail. 
+ */
+ReturnCode changeHorizontalScrollOffset(int increment){
+    if(_horizontalScreenOffset + increment < 0){
+        _horizontalScreenOffset = 0;
+    } else{
+        _horizontalScreenOffset += increment;
+    }
+    return 1;
+}
+
+/**
+ * Used to set the current horizontal scrolling value if new value < 0 simply set to 0. 
+ */
+ReturnCode setHorizontalScrollOffset(int newValue){
+    if(newValue < 0){
+        _horizontalScreenOffset = 0;
+    } else{
+        _horizontalScreenOffset = newValue;
+    }
+    return 1;
+}
+
+/**
+ * Special function to port in  "leap of faith" fashion an atomic index value to next printing round since line stats will be invalidated by then.
+ */
+int getPrintingPortAtomicPosition(){
+    return _portTopIdxForNext;
+}
+
 
 /**
  * Function to translate current screen position to (general) absolute atomic index. 
@@ -117,7 +191,7 @@ int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence)
     }
     
     // Quick access case: beginning of line
-    if(charColumn == 0){
+    if(_horizontalScreenOffset == 0 && charColumn == 0){
         return lineStats.absolutePos[relativeLine];
     } 
 
@@ -129,7 +203,7 @@ int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence)
     int rollingAtomicCount = 0;
     Atomic *currentItemBlock = NULL;
 
-    while (charCount < charColumn +1){
+    while (charCount < charColumn + _horizontalScreenOffset +1){
         DEBG_PRINT("rollingAtmcCount:%d, blockOffs:%d, size:%d.\n", rollingAtomicCount, blockOffset, size);
         if(rollingAtomicCount >= size){
             blockOffset = blockOffset + rollingAtomicCount;
@@ -154,8 +228,8 @@ int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence)
 
         //DEBG_PRINT("Cond1:%d, Cond2:%d ;compared to:'%c'\n",(currentItemBlock[rollingAtomicCount] == linBidentifier), (currentItemBlock[rollingAtomicCount] == END_OF_TEXT_CHAR), currentItemBlock[rollingAtomicCount]);
         if(/*rollingAtomicCount < size &&*/ (currentItemBlock[rollingAtomicCount] == linBidentifier || currentItemBlock[rollingAtomicCount] == END_OF_TEXT_CHAR)){
-            if (charColumn != charCount){/*Not last column +1 requested case: not comparing to +1 since while loop takin this +1 into account!...*/
-                ERR_PRINT("Requested column:%d is beyond last legal char column:%d",charColumn, charCount/*last +1*/ );
+            if (charColumn +_horizontalScreenOffset != charCount){/*Not last column +1 requested case: not comparing to +1 since while loop takin this +1 into account!...*/
+                ERR_PRINT("Requested column + horiz scroll:%d is beyond last legal char column:%d\n",charColumn +_horizontalScreenOffset, charCount/*last +1*/ );
                 return -1;
             } else{
                 // Special case to allow moving cursor after the last char of the line.
