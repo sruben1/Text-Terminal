@@ -20,6 +20,11 @@
 int getGeneralLineNbr(int lineNbrOnScreen);
 
 /**
+ * Returns the quantity of lines currently stored in line stats system.
+ */
+int getTotalAmountOfRelativeLines();
+
+/**
  * Returns the number of Utf-8 chars in a given line, the line number requires counting from 0.
  */
 int getUtfNoControlCharCount(int relativeLine);
@@ -65,4 +70,7 @@ ReturnCode setAbsoluteLineNumber(int newLineNumber);
  */
 wchar_t* utf8_to_wchar(const Atomic* itemArray, int sizeToParse, int precomputedWCharCount);
 
+
+size_t get_raw_bytes(Sequence* seq, Position pos, size_t n, char *out);
+int count_utf8_chars(const unsigned char *s);
 #endif 

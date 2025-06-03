@@ -38,6 +38,19 @@ int getGeneralLineNbr(int lineNbrOnScreen){
 }
 
 /**
+ * Returns the quantity of lines currently stored in line stats system.
+ */
+int getTotalAmountOfRelativeLines(){
+    int i = 0;
+    for(; i <= 75; i++){ // Hard coded internal limit at 75
+        if (lineStats.absolutePos[i] == -1){
+            return i;
+        }
+    }
+    return i;
+}
+
+/**
  * Returns the number of Utf-8 chars in a given line, the line number requires counting from 0.
  */
 int getUtfNoControlCharCount(int relativeLine){
@@ -53,6 +66,7 @@ int getUtfNoControlCharCount(int relativeLine){
  * Interface to invalidate current line statistics until first line is updated again. 
  */
 ReturnCode setLineStatsNotUpdated(){
+    DEBG_PRINT("Line stats set to invalidated.\n");
     lineStats.absolutePos[0] = -1;
     return 1;
 }
@@ -92,6 +106,7 @@ ReturnCode setAbsoluteLineNumber(int newLineNumber){
  * >> relativeLine and charColumn require counting form position 0.
  */
 int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence){
+    DEBG_PRINT("Calculating abs atomic index for: line%d, column%d...\n", relativeLine, charColumn);
     
     // Check that request is valid in current data structure state: 
     for(int i = 0; i <= relativeLine; i++){
@@ -101,53 +116,65 @@ int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence)
         }
     }
     
-    // quick access case:
+    // Quick access case: beginning of line
     if(charColumn == 0){
         return lineStats.absolutePos[relativeLine];
     } 
 
-    // General case, determine by iterating through chars:
+    LineBidentifier linBidentifier = getCurrentLineBidentifier();
+
+    int size = 0;
+    int blockOffset = 0;
+    int charCount = 0;
+    int rollingAtomicCount = 0;
     Atomic *currentItemBlock = NULL;
 
-    int atomicIndex = 0;
-
-    // Get first block of the line
-    Size size = getItemBlock(sequence, lineStats.absolutePos[relativeLine], &currentItemBlock);
-    if(size < 0){
-        ERR_PRINT("Position determination failed (on first block request).\n");
-        return -1;
-    }
-
-    LineBidentifier lineBidentifier = getCurrentLineBidentifier();
-
-    int charCounter = 0;
-    int blockOffset = 0;
-    while (atomicIndex < charColumn){
-        if(atomicIndex >= size + blockOffset){
-            // get next block
-            size = getItemBlock(sequence, lineStats.absolutePos[relativeLine] + atomicIndex, &currentItemBlock);
-            if(size < 0){
-                ERR_PRINT("Position determination failed (on consecutive block request).\n");
+    while (charCount < charColumn +1){
+        DEBG_PRINT("rollingAtmcCount:%d, blockOffs:%d, size:%d.\n", rollingAtomicCount, blockOffset, size);
+        if(rollingAtomicCount >= size){
+            blockOffset = blockOffset + rollingAtomicCount;
+            rollingAtomicCount = 0;
+            DEBG_PRINT("Requesting next block in seek, at atomic:%d\n", lineStats.absolutePos[relativeLine] + blockOffset);
+            size = getItemBlock(sequence, lineStats.absolutePos[relativeLine] + blockOffset, &currentItemBlock);
+            DEBG_PRINT("New blockOffset=%d, size=%d\n", blockOffset, size);
+            if(size <= 0){
+                ERR_PRINT("Position determination failed (on block request for atomic:%d).\n", lineStats.absolutePos[relativeLine] + blockOffset);
                 return -1;
             }
         }
-        DEBG_PRINT("seeking at char: '%c'\n", currentItemBlock[atomicIndex]); 
-        if(currentItemBlock[atomicIndex] == lineBidentifier){
-            // found line end (char)
-            ERR_PRINT("Line shorter then requested column postion!\n");
-            return -1;
-        }
-        if( ((currentItemBlock[atomicIndex] & 0xC0) != 0x80) && (currentItemBlock[atomicIndex] >= 0x20) ){
+
+
+        DEBG_PRINT("Attempt readout char...\n");
+        DEBG_PRINT("seeking at char%d: '%c'\n", charCount, currentItemBlock[rollingAtomicCount]); 
+        if( ((currentItemBlock[rollingAtomicCount] & 0xC0) != 0x80) && (currentItemBlock[rollingAtomicCount] >= 0x20) ){
             // If start of char UTF-8 char and not a control char:
-            charCounter++;
+            DEBG_PRINT("Incrementing to char%d\n", charCount +1);
+            charCount++;
         }
-        atomicIndex++;
+
+        //DEBG_PRINT("Cond1:%d, Cond2:%d ;compared to:'%c'\n",(currentItemBlock[rollingAtomicCount] == linBidentifier), (currentItemBlock[rollingAtomicCount] == END_OF_TEXT_CHAR), currentItemBlock[rollingAtomicCount]);
+        if(/*rollingAtomicCount < size &&*/ (currentItemBlock[rollingAtomicCount] == linBidentifier || currentItemBlock[rollingAtomicCount] == END_OF_TEXT_CHAR)){
+            if (charColumn != charCount){/*Not last column +1 requested case: not comparing to +1 since while loop takin this +1 into account!...*/
+                ERR_PRINT("Requested column:%d is beyond last legal char column:%d",charColumn, charCount/*last +1*/ );
+                return -1;
+            } else{
+                // Special case to allow moving cursor after the last char of the line.
+                DEBG_PRINT("In special last column +1\n");
+                rollingAtomicCount++; // Increment to keep return value consistency among different cases...
+                if(getCurrentLineBstd == MSDOS){
+                    DEBG_PRINT("Doing special MSDOS line break standard handling...\n");
+                    // decrease atomic for return by 1 position to keep \r\n correctly contiguous.
+                    rollingAtomicCount--;
+                }
+            }  
+            break;
+        } 
+        rollingAtomicCount++;
     }
-    DEBG_PRINT("Seek ended with blockSize = %d, blockOffset = %d, nbr of chars %d\n", size, blockOffset, charCounter);
-    return charCounter;
+    DEBG_PRINT("Atomic start of line:%d, blockOffs:%d, rollingAtomCont:%d\n",lineStats.absolutePos[relativeLine],blockOffset,rollingAtomicCount);
+    return lineStats.absolutePos[relativeLine] + blockOffset + rollingAtomicCount -1;
 }
-
-
+    
 /*
 ====================
     W-CHAR utilities:
@@ -164,7 +191,7 @@ wchar_t* utf8_to_wchar(const Atomic* itemArray, int sizeToParse, int precomputed
         return NULL;
     }   
 
-    DEBG_PRINT("Pre allocating %d wChar positions.\n", precomputedWCharCount+1);
+    //DEBG_PRINT("Pre allocating %d wChar positions.\n", precomputedWCharCount+1);
     wchar_t* wStrToReturn = malloc((precomputedWCharCount + 1) * sizeof(wchar_t));
 
     if (!wStrToReturn){
@@ -184,7 +211,7 @@ wchar_t* utf8_to_wchar(const Atomic* itemArray, int sizeToParse, int precomputed
         //DEBG_PRINT("Trying to parse\n");
         //DEBG_PRINT("Current parser byte: %02x\n", (uint8_t) itemArray[(int)atomicIndx]);
         size_t lenOfCurrentParse = mbrtowc(&wStrToReturn[(int)destIndx], (const char*) &itemArray[(int)atomicIndx], sizeToParse - atomicIndx, &state);
-        //DEBG_PRINT("Got parser size:%d\n", (int) lenOfCurrentParse);
+        //BG_PRINT("Got parser size:%d\n", (int) lenOfCurrentParse);
         if((int) lenOfCurrentParse == -1){
             ERR_PRINT("Encountered invalid utf-8 char while converting!\n");
             wStrToReturn[destIndx] = L'\uFFFD'; //Insert "unknown" character instead.
@@ -200,7 +227,6 @@ wchar_t* utf8_to_wchar(const Atomic* itemArray, int sizeToParse, int precomputed
             atomicIndx += (int)lenOfCurrentParse;
         }
         //DEBG_PRINT("Bool: %d\n", (((int)atomicIndx) < sizeToParse) && (((int)destIndx) < precomputedWCharCount));
-        //SET_BREAK_POINT;
     }
     //Finalize parse
     if (( (int) destIndx < precomputedWCharCount)){

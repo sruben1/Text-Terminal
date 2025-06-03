@@ -8,14 +8,13 @@
  * Simple profiler for measuring time of some operation
  */
 
-static clock_t profiler_start_time;
-
+static clock_t _private_start_time;
 /**
  * Start the profiler.
  */
 static inline void profilerStart() {
-    if (profiler_start_time == -1){
-        profiler_start_time = clock();
+    if (_private_start_time == -1){
+        _private_start_time = clock();
     }
 }
 
@@ -25,12 +24,12 @@ static inline void profilerStart() {
  */
 static inline double profilerStop(char* nameOfOperation) {
     double elapsed_time = -1;
-    if (profiler_start_time != -1){
+    if (_private_start_time != -1){
         clock_t end_time = clock();
-        elapsed_time = (end_time - profiler_start_time) / (double)CLOCKS_PER_SEC;
-        PROFILER_PRINT("%s took: %f seconds\n", nameOfOperation, elapsed_time);
+        elapsed_time = (end_time - _private_start_time) / (double)CLOCKS_PER_SEC;
+        PROFILER_PRINT("%s took,%f,seconds,%f,\n", nameOfOperation, elapsed_time, clock()/(double)CLOCKS_PER_SEC);
     }
-    profiler_start_time = -1;
+    _private_start_time = -1;
     return elapsed_time;
 }
 
