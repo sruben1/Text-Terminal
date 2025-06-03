@@ -68,13 +68,32 @@ ReturnCode updateLine(int relativeLineNumber, int absoluteGeneralAtomicPosition 
  * Function to call when scrolling.
  *  requires full update of statistics afterwards since operation invalidates internal state.
  */
-ReturnCode moveAbsoluteLineNumbers(int addOrSubstract);
+ReturnCode moveAbsoluteLineNumbers(int addOrSubstractOne);
 
 /**
  * Function to call when scrolling. Counting line numbers form 0. 
  *  requires full update of statistics afterwards since operation invalidates internal state.
  */
-ReturnCode setAbsoluteLineNumber(int newLineNumber);
+ReturnCode jumpAbsoluteLineNumber(int newTopLineNumber, int atomicIdxOfTop);
+
+/**
+ * Returns the current horizontal scrolling state, returns integer >= 0. 
+ */
+int getCurrHorizontalScrollOffset();
+
+/**
+ * Used to increment the current horizontal scrolling value, returns 1 on success, -1 on fail. 
+ */
+ReturnCode changeHorizontalScrollOffset(int increment);
+/**
+ * Used to set the current horizontal scrolling value, returns 1 on success, -1 on fail. 
+ */
+ReturnCode setHorizontalScrollOffset(int newValue);
+
+/**
+ * Special function to port leap of faith value to next printing round since line stats will be invalidated by then.
+ */
+int getPrintingPortAtomicPosition();
 
 /*
 ====================
@@ -82,11 +101,9 @@ ReturnCode setAbsoluteLineNumber(int newLineNumber);
 ====================
 */
 
-/** 
- * Function that returns a wChar string with L'\0' terminator. 
- * >> sizeToParse == last parsed index of itemArray **+1**.
- * >> precomputedWCharCount == nbr of wChars without the here added null terminator.
- */
+/*Function that returns a wChar string with L'\0' terminator. 
+>> sizeToPass == last parsed index of itemArray **+1**; 
+>> precomputedWCharCount == nbr of wChars without the here added null terminator*/
 wchar_t* utf8_to_wchar(const Atomic* itemArray, int sizeToParse, int precomputedWCharCount);
 
 

@@ -7,6 +7,7 @@
 #include <ncurses.h> // Primary GUI library 
 #include <stdlib.h>
 #include <string.h>
+#include <math.h> // for ceil and other math
 
 #include <sys/wait.h>  
 #include <unistd.h>
@@ -33,10 +34,18 @@ LineBidentifier currentLineBidentifier = NONE_ID;
 
 static int cursorX = 0, cursorY = 0;
 static int cursorEndX = 0, cursorEndY = 0;
-static Position topLineGeneralNbr = 0;
+
 bool refreshFlag = true;
 
 static int lastGuiHeight = 0, lastGuiWidth = 0;
+
+// Menu implementations:
+enum _MenuState { NOT_IN_MENU, FIND, FIND_CYCLE, F_AND_R1, F_AND_R2, F_AND_R_CYCLE };
+static enum _MenuState currMenuState = NOT_IN_MENU;
+static int menuCursor = 0;
+#define MAX_MENU_INPUT 15
+static wchar_t firstMenuInput[MAX_MENU_INPUT] = L"";
+static wchar_t secondMenuInput[MAX_MENU_INPUT] = L"";
 
 /*======== forward declarations ========*/
 void init_editor(void);
@@ -60,6 +69,9 @@ void updateCursorAndMenu();
 
 // Don't use unless you know what you're doing!
 void relocateCursorNoUpdate(int newX, int newY);
+
+// horizontal scrolling auto handler:
+autoAdjustHorizontalScrolling(bool forEndCursor);
 
 // Helper functions:
 ReturnCode deleteCurrentSelectionRange();
@@ -177,7 +189,8 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                 if(currentItemBlock[currentSectionStart] != END_OF_TEXT_CHAR){
                     //print out line or block (could be either!!), interpreted as UTF-8 sequence:atomicsInLine:
                     DEBG_PRINT(">>>>>>Trying to print: line %d, at column %d\n", currLineBcount, nbrOfUtf8CharsNoControlCharsInLine);
-                    mvwaddwstr(stdscr, currLineBcount, nbrOfUtf8CharsNoControlCharsInLine, lineToPrint);
+                    int truncateFromStart = getCurrHorizontalScrollOffset();
+                    mvwaddwstr(stdscr, currLineBcount, nbrOfUtf8CharsNoControlCharsInLine-truncateFromStart, (wchar_t*) lineToPrint + truncateFromStart);
                     // TODO: Horizontal scrolling  (i.e.left truncation) and right side truncation needed here as well.
 
                 }
@@ -192,8 +205,6 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
 
                     // Save in the line stats (from variables) into dedicated management structure:
                     updateLine(currLineBcount, frozenLineStart, nbrOfUtf8CharsNoControlCharsInLine);
-                    //Set following invalid so that last line is always identifiable as such...
-                    updateLine(currLineBcount + 1, -1, 0);
 
                     currLineBcount++;
 
@@ -258,6 +269,7 @@ int main(int argc, char *argv[]){
     // Get initial screen size
     getmaxyx(stdscr, lastGuiHeight, lastGuiWidth);
     
+    //insert(activeSequence, 0, L"Test my truncation.");
     // Main editor loop
     while (1) {
     checkSizeChanged();
@@ -271,7 +283,8 @@ int main(int argc, char *argv[]){
         if (activeSequence != NULL && lastGuiHeight > MENU_HEIGHT) {
             int linesToRender = lastGuiHeight - MENU_HEIGHT;
             if (linesToRender > 0) {
-                print_items_after(topLineGeneralNbr, linesToRender);
+                DEBG_PRINT("Refreshing text now.\n");
+                print_items_after(getPrintingPortAtomicPosition(), linesToRender);
             }
         }
         // Draws stats and position cursor back where it should be:
@@ -739,6 +752,7 @@ void process_input(void) {
                     DEBG_PRINT("Handling MOUSE event.\n");
                     if (event.bstate & BUTTON1_CLICKED) {
                         if (event.y < lastGuiHeight - MENU_HEIGHT){
+                            currMenuState = NOT_IN_MENU;
                             // Text cursor case:
                                 relocateAndupdateCursorAndMenu(event.x, event.y);
                         }  else{
@@ -772,6 +786,16 @@ void process_input(void) {
                 
             case KEY_RIGHT: 
                 DEBG_PRINT("[CURSOR]: RIGHT\n");
+                if(currMenuState != NOT_IN_MENU){
+                    if(menuCursor+1 < MAX_MENU_INPUT){
+                       //menuCursor++; Disable for now
+                    } else{
+                        //menuCursor = MAX_MENU_INPUT-1;
+                    }
+                    updateCursorAndMenu();
+                    break;
+                }
+                //Otherwise standard text cursor:
                 changeAndupdateCursorAndMenu(1,0);              
                 break;
              /*---- Range Cursor ----*/
@@ -791,6 +815,7 @@ void process_input(void) {
             case KEY_BACKSPACE: // Backspace
             case 8:
                 DEBG_PRINT("Processing 'BACKSPACE'\n");
+
 
                 // Calculation with range support:
                 if (cursorNotInRangeSelectionState()){
@@ -903,6 +928,23 @@ void process_input(void) {
             case KEY_ENTER: // Enter key
             case 10:
             case 13:
+                if(currMenuState != NOT_IN_MENU){
+                    DEBG_PRINT("Handling enter in Menu Mode");
+                    // Everything Find & Replace:
+                    if(currMenuState == F_AND_R1){
+                        menuCursor = 0;
+                        currMenuState = F_AND_R2;
+                    } else if (currMenuState == F_AND_R2 || currMenuState == F_AND_R_CYCLE){
+                        //TODO launch F&R procedure via future TextStructure.h interface here with cursorX+1/cursorY values.
+                        jumpAbsoluteLineNumber(0,0); // TODO
+                        cursorX = 0;// TODO
+                        cursorY = 0;// TODO
+                        refreshFlag = true;
+                        break;
+                    }
+                    updateCursorAndMenu();
+                    break;
+                }
                 DEBG_PRINT("Enter pressed at cursor position (%d, %d)\n", cursorY, cursorX);
 
                 if(deleteCurrentSelectionRange() < 0){
@@ -1006,7 +1048,7 @@ void process_input(void) {
  */
 void changeAndupdateCursorAndMenu(int incrX, int incrY){
     /*Debugging*/
-    DEBG_PRINT("Atomic position of cursor calc:%d\n", getAbsoluteAtomicIndex(cursorY + incrY,cursorX + incrX, activeSequence));
+    //DEBG_PRINT("Atomic position of cursor calc:%d\n", getAbsoluteAtomicIndex(cursorY + incrY,cursorX + incrX, activeSequence));
     //debugPrintInternalState(activeSequence, true,false);
     /*Debugging end*/
     relocateAndupdateCursorAndMenu(cursorX + incrX, cursorY + incrY);
@@ -1019,6 +1061,7 @@ void changeAndupdateCursorAndMenu(int incrX, int incrY){
  */
 void relocateAndupdateCursorAndMenu(int newX, int newY){
     relocateCursorNoUpdate(newX, newY);
+    
 
     updateCursorAndMenu();
 }
@@ -1030,6 +1073,22 @@ void relocateAndupdateCursorAndMenu(int newX, int newY){
  * Automatically jumps to next/previous line if legal to do so.  
  */
 void relocateCursorNoUpdate(int newX, int newY){
+    if (currMenuState != NOT_IN_MENU){
+        if(currMenuState == FIND || currMenuState == F_AND_R1){
+            if(newX < wcslen(firstMenuInput) && newX >= 0){
+                menuCursor = newX;
+            }
+        } else if(currMenuState == F_AND_R2){
+            if(newX < wcslen(secondMenuInput) && newX >= 0){
+                menuCursor = newX;
+            }
+        } else{
+            //Exit menu mode since interrupted
+            currMenuState = NOT_IN_MENU;
+        }
+        updateCursorAndMenu();
+        return 1;
+    }
     bool changedY = !(cursorY == newY);
     // Handle Y:
     int amtOfRelativeLines = getTotalAmountOfRelativeLines();
@@ -1043,6 +1102,7 @@ void relocateCursorNoUpdate(int newX, int newY){
         DEBG_PRINT("Y beyond start case.\n");
         cursorY = 0;
         cursorX = 0;
+        autoAdjustHorizontalScrolling(false);
         resetRangeSelectionState();
         return;
 
@@ -1051,6 +1111,7 @@ void relocateCursorNoUpdate(int newX, int newY){
         DEBG_PRINT("Y beyond end case.\n");
         cursorY = amtOfRelativeLines -1;
         cursorX = getUtfNoControlCharCount(cursorY);
+        autoAdjustHorizontalScrolling(false);
         resetRangeSelectionState();
         return;
 
@@ -1086,6 +1147,7 @@ void relocateCursorNoUpdate(int newX, int newY){
             DEBG_PRINT("Invalid case skipped in 'relocateCursor', but range reset & update performed.\n");
         }
     }
+    autoAdjustHorizontalScrolling(false);
     resetRangeSelectionState();
 }
 
@@ -1115,14 +1177,18 @@ void relocateRangeEndAndUpdate(int newX, int newY){
         // Can't take negatives, just put at beginning:
         cursorEndY = 0;
         cursorEndX = 0;
+        autoAdjustHorizontalScrolling(true);
         resetRangeSelectionState();
         return;
+
     } else if (newY >= amtOfRelativeLines) {
         // Special case of beyond last line:
         cursorEndY = amtOfRelativeLines -1;
-        cursorEndX = getUtfNoControlCharCount(cursorEndY);
+        cursorEndX = getUtfNoControlCharCount(cursorEndY) - getCurrHorizontalScrollOffset();
+        autoAdjustHorizontalScrolling(true);
         resetRangeSelectionState();
         return;
+
     } else {
         ERR_PRINT("Unexpected, unhandled case in 'relocateRangeEndAndUpdate()'\n");
         return;
@@ -1151,7 +1217,41 @@ void relocateRangeEndAndUpdate(int newX, int newY){
             DEBG_PRINT("Invalid case skipped in 'relocateRangeEndAndUpdate()', but update performed.\n");
         }
     }
+    autoAdjustHorizontalScrolling(true);
     updateCursorAndMenu();
+}
+
+/**
+ * Function to relocate horizontal scrolling seting so that cursor is in range...
+ */
+autoAdjustHorizontalScrolling(bool forEndCursor){
+    int currHorizScroll = getCurrHorizontalScrollOffset();
+    int newHorizScroll = 0;
+
+    int baseScroll = (int)(0.5 * lastGuiWidth);
+
+    if(!forEndCursor){
+        int multiplier = (int)ceil(abs(cursorX) / (double)baseScroll);
+        if(cursorX < 0){
+            newHorizScroll = -(multiplier * baseScroll);
+        } else if(cursorX > lastGuiWidth) {
+            newHorizScroll = +(multiplier * baseScroll);
+        }
+    } else{
+       int multiplier = (int)ceil(abs(cursorX) / (double)baseScroll);
+        if(cursorEndX < 0){
+            newHorizScroll = -(multiplier * baseScroll);
+        } else if(cursorEndX > lastGuiWidth) {
+            newHorizScroll = +(multiplier * baseScroll);
+        } 
+    }
+
+    if (newHorizScroll != 0){
+        changeHorizontalScrollOffset(newHorizScroll);
+        cursorX += newHorizScroll;
+        cursorEndX += newHorizScroll;
+        refreshFlag = true;
+    }
 }
 
 /**
@@ -1241,7 +1341,7 @@ void updateCursorAndMenu(){
         }
         
         if (lastGuiHeight >= MENU_HEIGHT) {
-            mvprintw(lastGuiHeight - 1, 0, "Ln %d-%d, Col %d-%d   Ctrl-l to quit", cursorY + 1, cursorEndY +1, cursorX + 1, cursorEndX +1);
+            mvprintw(lastGuiHeight - 1, 0, "Ln %d-%d, Col %d-%d   Ctrl-l to quit", cursorY + getCurrHorizontalScrollOffset() + 1, cursorEndY + getCurrHorizontalScrollOffset() +1, cursorX + 1, cursorEndX +1);
             clrtoeol(); // Clear rest of status line
         }
 

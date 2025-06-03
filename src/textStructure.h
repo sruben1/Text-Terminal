@@ -88,6 +88,7 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
 =========================
 */
 int getCurrentWordCount();
+int backTrackToFirstAtomicInLine(Atomic fromAtomic);
 
 /*
 =========================

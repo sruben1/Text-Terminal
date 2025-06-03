@@ -470,6 +470,23 @@ ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosit
 }
 
 /*
+=========================
+  Query internals
+=========================
+*/
+
+/**
+ * Return Atomic position starting form position 1
+ */
+int backTrackToFirstAtomicInLine(Atomic fromAtomic){
+  // Trivial cases:
+  if(fromAtomic <= 0 || fromAtomic-1 == 0){
+    return 0;
+  }
+  // TODO once merged with latest changes!
+}
+
+/*
 =============
   Debug Utils
 =============
