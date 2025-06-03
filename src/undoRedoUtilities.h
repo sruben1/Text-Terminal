@@ -1,3 +1,6 @@
+#ifndef UNDOREDO_UTILITIES_H
+#define UNDOREDO_UTILITIES_H
+
 #include "textStructure.h"
 
 /**
@@ -36,3 +39,5 @@ ReturnCode pushOperation(OperationStack *stack, Operation *operation);
 Operation* popOperation(OperationStack *stack);
 int getOperationStackSize(OperationStack *stack);
 ReturnCode freeOperationStack(OperationStack *stack);
+
+#endif
