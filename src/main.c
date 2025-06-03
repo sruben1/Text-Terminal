@@ -70,9 +70,6 @@ void updateCursorAndMenu();
 // Don't use unless you know what you're doing!
 void relocateCursorNoUpdate(int newX, int newY);
 
-// horizontal scrolling auto handler:
-autoAdjustHorizontalScrolling(bool forEndCursor);
-
 // Helper functions:
 ReturnCode deleteCurrentSelectionRange();
 
@@ -189,8 +186,8 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                 if(currentItemBlock[currentSectionStart] != END_OF_TEXT_CHAR){
                     //print out line or block (could be either!!), interpreted as UTF-8 sequence:atomicsInLine:
                     DEBG_PRINT(">>>>>>Trying to print: line %d, at column %d\n", currLineBcount, nbrOfUtf8CharsNoControlCharsInLine);
-                    int truncateFromStart = getCurrHorizontalScrollOffset();
-                    mvwaddwstr(stdscr, currLineBcount, nbrOfUtf8CharsNoControlCharsInLine-truncateFromStart, (wchar_t*) lineToPrint + truncateFromStart);
+                    //int truncateFromStart = getCurrHorizontalScrollOffset();
+                    mvwaddwstr(stdscr, currLineBcount, nbrOfUtf8CharsNoControlCharsInLine, lineToPrint);
                     // TODO: Horizontal scrolling  (i.e.left truncation) and right side truncation needed here as well.
 
                 }
@@ -1102,7 +1099,6 @@ void relocateCursorNoUpdate(int newX, int newY){
         DEBG_PRINT("Y beyond start case.\n");
         cursorY = 0;
         cursorX = 0;
-        autoAdjustHorizontalScrolling(false);
         resetRangeSelectionState();
         return;
 
@@ -1111,7 +1107,6 @@ void relocateCursorNoUpdate(int newX, int newY){
         DEBG_PRINT("Y beyond end case.\n");
         cursorY = amtOfRelativeLines -1;
         cursorX = getUtfNoControlCharCount(cursorY);
-        autoAdjustHorizontalScrolling(false);
         resetRangeSelectionState();
         return;
 
@@ -1147,7 +1142,6 @@ void relocateCursorNoUpdate(int newX, int newY){
             DEBG_PRINT("Invalid case skipped in 'relocateCursor', but range reset & update performed.\n");
         }
     }
-    autoAdjustHorizontalScrolling(false);
     resetRangeSelectionState();
 }
 
@@ -1177,7 +1171,6 @@ void relocateRangeEndAndUpdate(int newX, int newY){
         // Can't take negatives, just put at beginning:
         cursorEndY = 0;
         cursorEndX = 0;
-        autoAdjustHorizontalScrolling(true);
         resetRangeSelectionState();
         return;
 
@@ -1185,7 +1178,6 @@ void relocateRangeEndAndUpdate(int newX, int newY){
         // Special case of beyond last line:
         cursorEndY = amtOfRelativeLines -1;
         cursorEndX = getUtfNoControlCharCount(cursorEndY) - getCurrHorizontalScrollOffset();
-        autoAdjustHorizontalScrolling(true);
         resetRangeSelectionState();
         return;
 
@@ -1217,41 +1209,7 @@ void relocateRangeEndAndUpdate(int newX, int newY){
             DEBG_PRINT("Invalid case skipped in 'relocateRangeEndAndUpdate()', but update performed.\n");
         }
     }
-    autoAdjustHorizontalScrolling(true);
     updateCursorAndMenu();
-}
-
-/**
- * Function to relocate horizontal scrolling seting so that cursor is in range...
- */
-autoAdjustHorizontalScrolling(bool forEndCursor){
-    int currHorizScroll = getCurrHorizontalScrollOffset();
-    int newHorizScroll = 0;
-
-    int baseScroll = (int)(0.5 * lastGuiWidth);
-
-    if(!forEndCursor){
-        int multiplier = (int)ceil(abs(cursorX) / (double)baseScroll);
-        if(cursorX < 0){
-            newHorizScroll = -(multiplier * baseScroll);
-        } else if(cursorX > lastGuiWidth) {
-            newHorizScroll = +(multiplier * baseScroll);
-        }
-    } else{
-       int multiplier = (int)ceil(abs(cursorX) / (double)baseScroll);
-        if(cursorEndX < 0){
-            newHorizScroll = -(multiplier * baseScroll);
-        } else if(cursorEndX > lastGuiWidth) {
-            newHorizScroll = +(multiplier * baseScroll);
-        } 
-    }
-
-    if (newHorizScroll != 0){
-        changeHorizontalScrollOffset(newHorizScroll);
-        cursorX += newHorizScroll;
-        cursorEndX += newHorizScroll;
-        refreshFlag = true;
-    }
 }
 
 /**
