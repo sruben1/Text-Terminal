@@ -13,16 +13,18 @@ It's key features are:
 * A 64 bit linux system.
 * A linux shell compatible with the ncurses api.
 * xClip must be installed for cut, copy and paste.
+to build form source:
+* ncursesw version 6 and dependencies 
 
 ## Usage
 ### Setup
-To compile from our source in the project root directory use:
+To compile from our source, in the project root directory use:
 ```
 make build
 ```
 To start *Text-Terminal*:
 ```
-./ProjectBuild.out [mandatory relative path to existing or new file]
+./textterminal.out [mandatory relative path to existing or new file]
 ```
 ### In the Application
 Ensure that the text file is not moddified while it is open in *Text-Terminal* since it uses the orriginal file in it's current state to provide high efficiency.
