@@ -30,7 +30,32 @@ Operation* undoOperation(Sequence *sequence, Operation *operation) {
     DescriptorNode *oldNext = operation->oldNext;
     DescriptorNode *last = operation->last;
     DescriptorNode *oldPrev = operation->oldPrev;
+    int optimizedCase = operation->optimizedCase;
+    unsigned long optimizedCaseSize = operation->optimizedCaseSize;
     free(operation); 
+
+    if (optimizedCase) {
+        // Handle optimized case where the operation is just an extension of a node
+        if (first == NULL) {
+            ERR_PRINT("Invalid operation nodes for undo in optimized case.\n");
+            return NULL;
+        }
+        // Restore the size of the first node
+        first->size -= optimizedCaseSize;
+        Operation *inverse = (Operation*) malloc(sizeof(Operation));
+        if (inverse == NULL) {
+            ERR_PRINT("Failed to allocate memory for inverse operation in optimized case.\n");
+            return NULL;
+        }
+        inverse->first = first;
+        inverse->oldNext = NULL;
+        inverse->last = NULL;
+        inverse->oldPrev = NULL;
+        inverse->optimizedCase = 1; // Indicate this is an optimized case
+        inverse->optimizedCaseSize = -optimizedCaseSize; // Negative to revert the size change
+        return inverse;
+    }
+        
     if (first == NULL || oldNext == NULL || last == NULL || oldPrev == NULL) {
         ERR_PRINT("Invalid operation nodes for undo.\n");
         return NULL;

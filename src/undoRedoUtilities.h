@@ -9,6 +9,11 @@ typedef struct {
     DescriptorNode *oldNext; // The old next node of the first node
     DescriptorNode *last;
     DescriptorNode *oldPrev; // The old previous node of the last node
+
+    // For optimization, some insertions simply extend a node.
+    // In this case first stores the node to extend and the other nodes are NULL.
+    int optimizedCase; // 1 if this is an optimized case, 0 otherwise
+    unsigned long optimizedCaseSize; // Byte size of the inserted data (negative to revert)
 } Operation;
 
 typedef struct OperationStack OperationStack;

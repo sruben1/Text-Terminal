@@ -355,13 +355,32 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
   if( (position == _lastInsert._lastAtomicPos + _lastInsert._lastCharSize) && (newlyWrittenBufferOffset == _lastInsert._lastWritePos +  _lastInsert._lastCharSize)){
     NodeResult toExtend = getNodeForPosition(sequence, position-1);
 
-    //Ensure not operating in invalid node...
+    // Ensure not operating in invalid node...
     if (toExtend.node != NULL){
       DEBG_PRINT("Insert now in optimized case.\n");
       // Simply increase the valid range of the node to now also encompass the new insertion as well:
-      toExtend.node->size += (long int) getUtf8ByteSize(textToInsert);
+      unsigned long byteSize = (unsigned long) getUtf8ByteSize(textToInsert);
+      toExtend.node->size += byteSize;
+
+      // Save the operation for undo
+      Operation *operation = (Operation*) malloc(sizeof(Operation));
+      if (operation == NULL) {
+        ERR_PRINT("Fatal malloc fail at insert operation!\n");
+        return -1; // Error
+      }
+      operation->first = toExtend.node;
+      operation->optimizedCase = 1;
+      operation->optimizedCaseSize = byteSize;
+      operation->oldNext = NULL; // Not used in optimized case
+      operation->last = NULL;
+      operation->oldPrev = NULL; 
+      if (pushOperation(sequence->undoStack, operation) == 0) {
+        ERR_PRINT("Failed to push operation onto undo stack.\n");
+        free(operation);
+        return -1; // Error
+      }
+
       // Save this insert's properties for comparison at next insert.
-      DEBG_PRINT("'Last Insert' follower set to:");
       _lastInsert._lastAtomicPos = position;
       _lastInsert._lastWritePos = newlyWrittenBufferOffset;
       _lastInsert._lastCharSize = atomicSizeOfInsertion;
@@ -375,8 +394,7 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
   _lastInsert._lastCharSize = atomicSizeOfInsertion;
 
 
-
-  // Create a new node for the inserted text
+  // Otherwise create a new node for the inserted text
   DescriptorNode* newInsert = (DescriptorNode*) malloc(sizeof(DescriptorNode));
   if(newInsert == NULL){
     ERR_PRINT("Fatal malloc fail at insert operation!\n");
@@ -419,6 +437,8 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
     operation->oldNext = next;
     operation->last = next;
     operation->oldPrev = prev;
+    operation->optimizedCase = 0; // Not an optimized case
+    operation->optimizedCaseSize = 0; // Not used in this case
     if (pushOperation(sequence->undoStack, operation) == 0) {
       ERR_PRINT("Failed to push operation onto undo stack.\n");
       free(newInsert);
@@ -474,6 +494,8 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
     operation->oldNext = foundNode;
     operation->last = foundNode->next_ptr;
     operation->oldPrev = foundNode;
+    operation->optimizedCase = 0; // Not an optimized case
+    operation->optimizedCaseSize = 0; // Not used in this case
     if (pushOperation(sequence->undoStack, operation) == 0) {
       ERR_PRINT("Failed to push operation onto undo stack.\n");
       free(newInsert);
@@ -543,6 +565,8 @@ ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosit
   operation->oldNext = startNode;
   operation->last = endNode->next_ptr;
   operation->oldPrev = endNode;
+  operation->optimizedCase = 0; // Not an optimized case
+  operation->optimizedCaseSize = 0; // Not used in this case
   if (pushOperation(sequence->undoStack, operation) == 0) {
     ERR_PRINT("Failed to push operation onto undo stack.\n");
     free(operation);
