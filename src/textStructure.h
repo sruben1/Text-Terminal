@@ -59,6 +59,8 @@ typedef struct {
   Buffer addBuffer;
   OperationStack *undoStack;
   OperationStack *redoStack;
+  int wordCount;
+  int lineCount;
 } Sequence;
 
 /*
@@ -92,7 +94,8 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
   Query internals
 =========================
 */
-int getCurrentWordCount();
+int getCurrentWordCount( Sequence *sequence );
+int getCurrentLineCount( Sequence *sequence );
 
 /*
 =========================

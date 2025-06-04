@@ -8,6 +8,7 @@
 
 #include "debugUtil.h"
 #include "fileManager.h" // Handles all file operations
+#include "statistics.h" // For counting words and lines
 
 /*------ Data structures for internal use ------*/
 typedef struct {
@@ -52,6 +53,10 @@ LineBidentifier getCurrentLineBidentifier(){
 
 Sequence* empty(){
   Sequence *newSeq = (Sequence*) malloc(sizeof(Sequence));
+  if(newSeq == NULL){
+    ERR_PRINT("Fatal malloc fail at empty sequence creation!\n");
+    return NULL; // Error
+  }
 
   // Initialize undo and redo stacks
   newSeq->undoStack = createOperationStack();
@@ -61,11 +66,13 @@ Sequence* empty(){
     free(newSeq);
     return NULL;
   }
+  newSeq->wordCount = 0;
+  newSeq->lineCount = 0;
 
   // Create sentinel nodes for the piece table
   DescriptorNode* firstNode = (DescriptorNode*) malloc(sizeof(DescriptorNode));
   DescriptorNode* lastNode = (DescriptorNode*) malloc(sizeof(DescriptorNode));
-  if(newSeq == NULL || firstNode == NULL || lastNode == NULL){
+  if(firstNode == NULL || lastNode == NULL){
     ERR_PRINT("Fatal malloc fail at empty sequence creation!\n");
     freeOperationStack(newSeq->undoStack);
     freeOperationStack(newSeq->redoStack);
@@ -330,6 +337,19 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
 
 /*
 =========================
+  Query internals
+=========================
+*/
+int getCurrentWordCount(Sequence *sequence) {
+  return sequence != NULL ? sequence->wordCount : -1; // Return -1 if sequence is NULL
+}
+
+int getCurrentLineCount(Sequence *sequence) {
+  return sequence != NULL ? sequence->lineCount : -1; // Return -1 if sequence is NULL
+}
+
+/*
+=========================
   Write/Edit
 =========================
 */
@@ -349,9 +369,13 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
     return -1;
   } 
 
-  DEBG_PRINT("cond1:%d , cond2: %d",(position == _lastInsert._lastAtomicPos + _lastInsert._lastCharSize), (newlyWrittenBufferOffset == _lastInsert._lastWritePos +  _lastInsert._lastCharSize));
+  // Increase the line count if the sequence was empty
+  if (position == 0 && sequence->pieceTable.first->next_ptr == sequence->pieceTable.last) {
+    sequence->lineCount++;
+  }
 
   // Optimization case: if insert at last insert (and buffer) +1 position simply extend node to hold new insert as well.
+  DEBG_PRINT("cond1:%d , cond2: %d",(position == _lastInsert._lastAtomicPos + _lastInsert._lastCharSize), (newlyWrittenBufferOffset == _lastInsert._lastWritePos +  _lastInsert._lastCharSize));
   if( (position == _lastInsert._lastAtomicPos + _lastInsert._lastCharSize) && (newlyWrittenBufferOffset == _lastInsert._lastWritePos +  _lastInsert._lastCharSize)){
     NodeResult toExtend = getNodeForPosition(sequence, position-1);
 
@@ -361,6 +385,11 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
       // Simply increase the valid range of the node to now also encompass the new insertion as well:
       unsigned long byteSize = (unsigned long) getUtf8ByteSize(textToInsert);
       toExtend.node->size += byteSize;
+
+      // Update statistics
+      TextStatistics stats = calculateStatsEffect(sequence, toExtend.node, toExtend.node->size - byteSize, toExtend.node, toExtend.node->size - 1, getCurrentLineBidentifier());
+      sequence->wordCount += stats.totalWords;
+      sequence->lineCount += stats.totalLineBreaks;
 
       // Save the operation for undo
       Operation *operation = (Operation*) malloc(sizeof(Operation));
@@ -528,6 +557,11 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
     foundNode->next_ptr->prev_ptr = seccondPart;
   }
 
+  // Update statistics
+  TextStatistics stats = calculateStatsEffect(sequence, newInsert, 0, newInsert, newInsert->size - 1, getCurrentLineBidentifier());
+  sequence->wordCount += stats.totalWords;
+  sequence->lineCount += stats.totalLineBreaks;
+
   return 1;
 }
 
@@ -554,6 +588,9 @@ ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosit
     ERR_PRINT("Delete failed: Attempted delete at continuation byte!\n");
     return -1;
   }
+
+  // Get the statistics effect of the deletion
+  TextStatistics stats = calculateStatsEffect(sequence, startNode, distanceInStartBlock, endNode, distanceInEndBlock, getCurrentLineBidentifier());
 
   // Save the original nodes for undo
   Operation *operation = (Operation*) malloc(sizeof(Operation));
@@ -618,6 +655,14 @@ ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosit
 
   newStartNode->next_ptr = newEndNode; 
   newEndNode->prev_ptr = newStartNode;
+
+  // Update statistics
+  sequence->wordCount -= stats.totalWords;
+  sequence->lineCount -= stats.totalLineBreaks;
+  if (beginPosition == 0 && sequence->pieceTable.first->next_ptr == sequence->pieceTable.last) {
+    // Deletion was the only content in the sequence, reset line count
+    sequence->lineCount = 0;
+  }
   
   return 1;
 }
