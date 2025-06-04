@@ -488,7 +488,7 @@ ReturnCode copySelectionToClipboard(Sequence* sequence) {
     getCurrentSelectionRang(&startX, &endX, &startY, &endY);
     
     copyYoffset = endY-startY;
-    copyXoffset = endX-startY;
+    copyXoffset = endX-startX;
 
     // Use getAbsoluteAtomicIndex to get positions
     int startPos = getAbsoluteAtomicIndex(startY, startX, sequence);
@@ -724,15 +724,37 @@ void process_input(void) {
         exit(0);
     }
     // ctrl+p for paste 
-    if (status == OK && wch == CTRL_KEY('p')) {
+     if (status == OK && wch == CTRL_KEY('p')) {
         DEBG_PRINT("Processing Ctrl+P (paste)\n");
+        
+        int originalCursorX = cursorX;
+        int originalCursorY = cursorY;
+        
         if (pasteFromClipboard(activeSequence, cursorY, cursorX) > 0) {
             DEBG_PRINT("Paste successful\n");
-            cursorX += copyXoffset;
-            cursorY += copyYoffset;
+            
+            if (copyYoffset == 0) {//single line
+                cursorX += copyXoffset;
+            } else {// Multi-line 
+                
+                cursorY += copyYoffset;
+                cursorX = copyXoffset;
+            }
+            
+            // Validate cursor bounds
+            if (cursorX < 0) cursorX = 0;
+            if (cursorY < 0) cursorY = 0;
+            if (cursorY >= lastGuiHeight - MENU_HEIGHT) {
+                cursorY = lastGuiHeight - MENU_HEIGHT - 1;
+            }
+            if (cursorX >= lastGuiWidth) {
+                cursorX = lastGuiWidth - 1;
+            }
+            
             resetRangeSelectionState();
             refreshFlag = true;
             setLineStatsNotUpdated();
+            
             if (lastGuiHeight >= MENU_HEIGHT) {
                 mvprintw(lastGuiHeight - 1, 0, "Text pasted   Ctrl-l to quit");
                 refresh();
