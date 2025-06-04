@@ -387,8 +387,8 @@ ReturnCode pasteFromClipboard(Sequence* sequence, int cursorY, int cursorX) {
     mbstowcs(wideText, clipboardText, wcharCount + 1);
     free(clipboardText);
     
-    // Insert the text at cursor position
-    Position insertPos = getAbsoluteAtomicIndex(cursorY, cursorX, sequence);
+    // Insert the text at cursor position using getAbsoluteAtomicIndex
+    int insertPos = getAbsoluteAtomicIndex(cursorY, cursorX, sequence);
     if (insertPos < 0) {
         ERR_PRINT("Failed to calculate insertion position\n");
         free(wideText);
@@ -428,7 +428,7 @@ char* getFromXclip(void) {
         execl("/usr/bin/xclip", "xclip", "-selection", "clipboard", "-o", NULL);
         _exit(1); 
     } else {
-        // Parent - read  pipe
+        // Parent - read pipe
         close(pipefd[1]); 
         
         char* buffer = malloc(4096);
@@ -476,21 +476,28 @@ char* getFromXclip(void) {
     }
 }
 
-ReturnCode copyToClipboard(Sequence* sequence, int startY, int startX, int endY, int endX) {
+ReturnCode copySelectionToClipboard(Sequence* sequence) {
     if (sequence == NULL) {
         ERR_PRINT("Invalid sequence for copy operation\n");
         return -1;
     }
     
-    Position startPos = getAbsoluteAtomicIndex(startY, startX, sequence);
-    Position endPos = getAbsoluteAtomicIndex(endY, endX, sequence);
+    // Get current selection range using the function from first file
+    int startX, endX, startY, endY;
+    getCurrentSelectionRang(&startX, &endX, &startY, &endY);
+    
+    // Use getAbsoluteAtomicIndex to get positions
+    int startPos = getAbsoluteAtomicIndex(startY, startX, sequence);
+    int endPos = getAbsoluteAtomicIndex(endY, endX, sequence);
     
     if (startPos < 0 || endPos < 0) {
         ERR_PRINT("Failed to calculate absolute positions for copy\n");
         return -1;
     }
-        if (startPos > endPos) {
-        Position temp = startPos;
+    
+    // Ensure proper order
+    if (startPos > endPos) {
+        int temp = startPos;
         startPos = endPos;
         endPos = temp;
     }
@@ -526,31 +533,75 @@ ReturnCode copyToClipboard(Sequence* sequence, int startY, int startX, int endY,
 }
 
 /**
- * Copy entire current line to clipboard
+ * Send text to xclip for clipboard storage
  */
-ReturnCode copyCurrentLine(Sequence* sequence, int currentY) {
-    if (sequence == NULL || currentY < 0) {
-        ERR_PRINT("Invalid parameters for copy current line\n");
+ReturnCode sendToXclip(const char* text) {
+    if (text == NULL) {
+        ERR_PRINT("No text provided to sendToXclip\n");
         return -1;
     }
     
-    int lineLength = getUtfNoControlCharCount(currentY);
-    return copyToClipboard(sequence, currentY, 0, currentY, lineLength);
+    int pipefd[2];
+    if (pipe(pipefd) == -1) {
+        ERR_PRINT("Failed to create pipe for xclip write\n");
+        return -1;
+    }
+    
+    pid_t pid = fork();
+    if (pid == -1) {
+        ERR_PRINT("Failed to fork for xclip write\n");
+        close(pipefd[0]);
+        close(pipefd[1]);
+        return -1;
+    }
+    
+    if (pid == 0) {
+        // Child - run xclip
+        close(pipefd[1]);
+        dup2(pipefd[0], STDIN_FILENO);
+        close(pipefd[0]);
+        
+        execl("/usr/bin/xclip", "xclip", "-selection", "clipboard", "-i", NULL);
+        _exit(1);
+    } else {
+        // Parent - write to pipe
+        close(pipefd[0]);
+        
+        size_t textLen = strlen(text);
+        ssize_t written = write(pipefd[1], text, textLen);
+        close(pipefd[1]);
+        
+        if (written != (ssize_t)textLen) {
+            ERR_PRINT("Failed to write complete text to xclip\n");
+            waitpid(pid, NULL, 0);
+            return -1;
+        }
+        
+        int status;
+        waitpid(pid, &status, 0);
+        
+        if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+            ERR_PRINT("xclip copy operation failed\n");
+            return -1;
+        }
+        
+        return 1;
+    }
 }
 
 /**
  * Extract text between abs positions
  * Returns allocated wchar_t string must be freed
  */
-wchar_t* extractTextRange(Sequence* sequence, Position startPos, Position endPos) {
+wchar_t* extractTextRange(Sequence* sequence, int startPos, int endPos) {
     if (sequence == NULL || startPos < 0 || endPos < startPos) {
         return NULL;
     }
     
     // Calculate total length needed
-    Position totalLength = endPos - startPos + 1;
+    int totalLength = endPos - startPos + 1;
     int utf8CharCount = 0;
-    Position currentPos = startPos;
+    int currentPos = startPos;
     
     // Count UTF-8 characters in range
     while (currentPos <= endPos) {
@@ -576,7 +627,7 @@ wchar_t* extractTextRange(Sequence* sequence, Position startPos, Position endPos
         return NULL;
     }
     
-    // buffer for wide characters
+    // Allocate buffer for wide characters
     wchar_t* result = malloc((utf8CharCount + 1) * sizeof(wchar_t));
     if (result == NULL) {
         ERR_PRINT("Failed to allocate memory for text extraction\n");
@@ -585,7 +636,7 @@ wchar_t* extractTextRange(Sequence* sequence, Position startPos, Position endPos
     
     // Extract actual text
     currentPos = startPos;
-    Position resultPos = 0;
+    int resultPos = 0;
     
     while (currentPos <= endPos && resultPos < utf8CharCount) {
         Atomic* block = NULL;
@@ -623,56 +674,6 @@ wchar_t* extractTextRange(Sequence* sequence, Position startPos, Position endPos
     return result;
 }
 
-
-/**
- * Send UTF-8 text to xclip
- */
-ReturnCode sendToXclip(const char* text) {
-    if (text == NULL) {
-        return -1;
-    }
-    
-    int pipefd[2];
-    if (pipe(pipefd) == -1) {
-        ERR_PRINT("Failed to create pipe for xclip\n");
-        return -1;
-    }
-    
-    pid_t pid = fork();
-    if (pid == -1) {
-        ERR_PRINT("Failed to fork for xclip\n");
-        close(pipefd[0]);
-        close(pipefd[1]);
-        return -1;
-    }
-    
-    if (pid == 0) {
-        // Child - run xclip
-        close(pipefd[1]); 
-        dup2(pipefd[0], STDIN_FILENO);
-        close(pipefd[0]);
-        
-        execl("/usr/bin/xclip", "xclip", "-selection", "clipboard", NULL);
-        _exit(1);
-    } else {
-        // Parent - write text to pipe
-        close(pipefd[0]); // Close read end
-        
-        size_t textLen = strlen(text);
-        ssize_t written = write(pipefd[1], text, textLen);
-        close(pipefd[1]);
-        
-        int status;
-        waitpid(pid, &status, 0);
-        
-        if (written != (ssize_t)textLen || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-            ERR_PRINT("xclip copy operation failed\n");
-            return -1;
-        }
-    }
-    
-    return 1;
-}
 
 void close_editor(void) {
     closeDebuggerFiles;
@@ -739,39 +740,25 @@ void process_input(void) {
         }
     }
 
-    // Ctrl+Y - Copy current line 
-    if (status == OK && wch == CTRL_KEY('y')) {
-        DEBG_PRINT("Processing Ctrl+Y (copy line)\n");
-        if (copyCurrentLine(activeSequence, cursorY) > 0) {
-            DEBG_PRINT("Line copied successfully\n");
-            // Optional: Show status message
-            if (lastGuiHeight >= MENU_HEIGHT) {
-                mvprintw(lastGuiHeight - 1, 0, "Line copied   Ctrl-l to quit");
-                refresh();
-                // Reset refresh flag so status shows briefly
-                refreshFlag = true;
-            }
-        } else {
-            ERR_PRINT("Failed to copy current line\n");
+    // ctrl+y for copy
+if (status == OK && wch == CTRL_KEY('y')) {
+    DEBG_PRINT("Processing Ctrl+Y (copy)\n");
+    if (copySelectionToClipboard(activeSequence) > 0) {
+        DEBG_PRINT("Copy successful\n");
+        
+        if (lastGuiHeight >= MENU_HEIGHT) {
+            mvprintw(lastGuiHeight - 1, 0, "Text copied   Ctrl-l to quit");
+            refresh();
+        }
+    } else {
+        ERR_PRINT("Failed to copy to clipboard\n");
+        if (lastGuiHeight >= MENU_HEIGHT) {
+            mvprintw(lastGuiHeight - 1, 0, "Copy failed   Ctrl-l to quit");
+            refresh();
         }
     }
-    /** 
-    // Ctrl+U - Copy selection (implement text selection later)
-    if (status == OK && wch == CTRL_KEY('u')) {
-        DEBG_PRINT("Processing Ctrl+U (copy selection)\n");
-        // For now, copy current line since no selection is implemented
-        if (copyCurrentLine(activeSequence, cursorY) > 0) {
-            DEBG_PRINT("Selection copied successfully\n");
-            if (lastGuiHeight >= MENU_HEIGHT) {
-                mvprintw(lastGuiHeight - 1, 0, "Selection copied   Ctrl-l to quit");
-                refresh();
-                refreshFlag = true;
-            }
-        } else {
-            ERR_PRINT("Failed to copy selection\n");
-        }
-    }
-    */
+}
+
     if (status == KEY_CODE_YES) {
         // Function key pressed
         int posStart = -1; // Used for delete and backspace
