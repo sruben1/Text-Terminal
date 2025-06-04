@@ -488,7 +488,7 @@ ReturnCode copySelectionToClipboard(Sequence* sequence) {
     
     // Use getAbsoluteAtomicIndex to get positions
     int startPos = getAbsoluteAtomicIndex(startY, startX, sequence);
-    int endPos = getAbsoluteAtomicIndex(endY, endX, sequence);
+    int endPos = getAbsoluteAtomicIndex(endY, endX, sequence)-1;
     
     if (startPos < 0 || endPos < 0) {
         ERR_PRINT("Failed to calculate absolute positions for copy\n");
