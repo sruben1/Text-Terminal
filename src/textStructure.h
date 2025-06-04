@@ -52,6 +52,12 @@ typedef struct{
 
 typedef struct OperationStack OperationStack; // Forward declaration for undo/redo stack
 
+/* Return value for find */
+typedef struct {
+  Position foundPosition; // Position of the first character of the found text
+  int lineNumber; // Line number of the found text
+} SearchResult;
+
 /* Combined data structure */
 typedef struct {
   PieceTable pieceTable;
@@ -106,8 +112,8 @@ int backTrackToFirstAtomicInLine(Atomic fromAtomic);
 ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert ); /* textToInsert: nullterminated string of wide chars */
 ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosition );
 
-ReturnCode copy( Sequence *sequence, Position fromBegin, Position fromEnd, Position toPosition );
-ReturnCode moveSequence( Sequence *sequence, Position fromBegin, Position fromEnd, Position toPosition );
+SearchResult find( Sequence *sequence, wchar_t *textToFind, Position startPosition ); /* textToFind: nullterminated string of wide chars, startPosition: position to start searching from */
+SearchResult findAndReplace( Sequence *sequence, wchar_t *textToFind, wchar_t *textToReplace, Position startPosition ); /* textToFind, textToReplace: nullterminated strings of wide chars, startPosition: position to start searching from */
 
 /*
 =============
