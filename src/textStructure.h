@@ -96,6 +96,7 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
 */
 int getCurrentWordCount( Sequence *sequence );
 int getCurrentLineCount( Sequence *sequence );
+int backTrackToFirstAtomicInLine(Atomic fromAtomic);
 
 /*
 =========================

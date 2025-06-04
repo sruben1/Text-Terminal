@@ -578,6 +578,7 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
 ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosition ){
   if (sequence == NULL || beginPosition < 0 || endPosition < beginPosition) {
     return -1; // Error
+    ERR_PRINT("Delete failed at security check.\n");
   }
 
   // Find the nodes for the given positions and check if a deletion is possible there
@@ -677,6 +678,23 @@ ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosit
   }
   
   return 1;
+}
+
+/*
+=========================
+  Query internals
+=========================
+*/
+
+/**
+ * Return Atomic position starting form position 1
+ */
+int backTrackToFirstAtomicInLine(Atomic fromAtomic){
+  // Trivial cases:
+  if(fromAtomic <= 0 || fromAtomic-1 == 0){
+    return 0;
+  }
+  // TODO once merged with latest changes!
 }
 
 /*
