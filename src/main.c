@@ -70,6 +70,9 @@ void updateCursorAndMenu();
 // Don't use unless you know what you're doing!
 void relocateCursorNoUpdate(int newX, int newY);
 
+// horizontal scrolling auto handler:
+bool autoAdjustHorizontalScrolling(bool forEndCursor);
+
 // Helper functions:
 ReturnCode deleteCurrentSelectionRange();
 
@@ -108,6 +111,8 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
 
     //In order to ensure porting line variables for if split over multiple blocks:
     int atomicsInLine = 0; // not an index! (+1 generally) 
+    int lastHorizScroll = -1;
+    int sinceHorizScrollCounter = 0;
     int nbrOfUtf8CharsInLine = 0;
     int nbrOfUtf8CharsNoControlCharsInLine = 0; // If we want to ignore line breaks.
     int frozenLineStart = firstAtomic; // Stays set until line break or end of text for statistics
@@ -163,7 +168,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                     ERR_PRINT("utf_8 to Wchar conversion failed! ending here!\n");
                     return -1;
                 }
-                
+                /*
                 #ifdef DEBUG
                 // Basic test print to test backend:
                 DEBG_PRINT("section start = %d, Offset = %d \n", currentSectionStart, offsetCounter);
@@ -182,13 +187,33 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                 }
                 DEBG_PRINT("\n~~~~~~~~~~~~~~~~~~\n");
                 #endif  
-                
+                */
                 if(currentItemBlock[currentSectionStart] != END_OF_TEXT_CHAR){
                     //print out line or block (could be either!!), interpreted as UTF-8 sequence:atomicsInLine:
                     DEBG_PRINT(">>>>>>Trying to print: line %d, at column %d\n", currLineBcount, nbrOfUtf8CharsNoControlCharsInLine);
-                    //int truncateFromStart = getCurrHorizontalScrollOffset();
-                    mvwaddwstr(stdscr, currLineBcount, nbrOfUtf8CharsNoControlCharsInLine, lineToPrint);
-                    // TODO: Horizontal scrolling  (i.e.left truncation) and right side truncation needed here as well.
+                    // Horizontal scrolling implementation:
+                    int horizontalScroll = getCurrHorizontalScrollOffset();
+                    // always cut off string at largest size... 
+                    if ((nbrOfUtf8CharsNoControlCharsInLine - horizontalScroll + nbrOfUtf8Chars) > lastGuiWidth-1){
+                        int calc = lastGuiWidth -1 + horizontalScroll -nbrOfUtf8CharsInLine;
+                        if(calc > 0 && calc < wcslen(lineToPrint)){
+                            lineToPrint[calc] = L'\0';
+                            DEBG_PRINT("Cutoff the block at:%d\n", calc);
+                        } else{
+                            lineToPrint[0] = L'\0';
+                            DEBG_PRINT("Cutoff the block at:0\n");
+                        }
+                        
+                    }
+
+                    // Counter so that print knows where to print depending on horizontal scroll.
+                    if(lastHorizScroll != horizontalScroll){
+                        lastHorizScroll = horizontalScroll;
+                        sinceHorizScrollCounter = 0;
+                    }
+                    if (nbrOfUtf8CharsNoControlCharsInLine + nbrOfUtf8CharsNoControlChars > horizontalScroll){ 
+                        mvwaddwstr(stdscr, currLineBcount, sinceHorizScrollCounter, lineToPrint + horizontalScroll);
+                    }
 
                 }
 
@@ -203,11 +228,17 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                     // Save in the line stats (from variables) into dedicated management structure:
                     updateLine(currLineBcount, frozenLineStart, nbrOfUtf8CharsNoControlCharsInLine);
 
+
+                    if (sinceHorizScrollCounter == 0){ 
+                        mvwaddwstr(stdscr, currLineBcount, 0, L"");
+                    }
+
                     currLineBcount++;
 
                     //DEBG_PRINT("atomicsInLine: %d, nbrOfUtf8CharsInLine: %d, nbrOfUtf8CharsNoControlCharsInLine: %d\n", atomicsInLine, nbrOfUtf8CharsInLine, nbrOfUtf8CharsNoControlCharsInLine);
                     // Reset variables for next line:
                     atomicsInLine = 0;
+                    sinceHorizScrollCounter = 0;
                     frozenLineStart = firstAtomic + offsetCounter + 1;
                     nbrOfUtf8CharsInLine = 0;
                     nbrOfUtf8CharsNoControlCharsInLine = 0;
@@ -215,6 +246,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                     // Ensure port of line statistics to next block handling (iteration):
                     atomicsInLine += offsetCounter+1;
                     nbrOfUtf8CharsInLine += nbrOfUtf8Chars;
+                    sinceHorizScrollCounter += nbrOfUtf8CharsNoControlChars;
                     nbrOfUtf8CharsNoControlCharsInLine += nbrOfUtf8CharsNoControlChars;
                     //DEBG_PRINT("Ported, current state: atomicsInLine: %d, nbrOfUtf8CharsInLine: %d, nbrOfUtf8CharsNoControlCharsInLine: %d\n", atomicsInLine, nbrOfUtf8CharsInLine, nbrOfUtf8CharsNoControlCharsInLine);
                 }
@@ -262,6 +294,8 @@ int main(int argc, char *argv[]){
         close_editor();
         return -1;
     }
+
+    //insert(activeSequence, 0, L"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad");
     
     // Get initial screen size
     getmaxyx(stdscr, lastGuiHeight, lastGuiWidth);
@@ -1212,6 +1246,51 @@ void relocateRangeEndAndUpdate(int newX, int newY){
     updateCursorAndMenu();
 }
 
+
+/**
+ * Function to relocate horizontal scrolling seting so that cursor is in range.
+ * Returns true if updated.
+ */
+bool autoAdjustHorizontalScrolling(bool forEndCursor){
+    int currHorizScroll = getCurrHorizontalScrollOffset();
+    int newHorizScroll = 0;
+
+    int baseScroll = (int)(0.5 * lastGuiWidth);
+
+    // hardcoded limit to move horiz Scroll by 1/2 width as soon as reach rightEnd-2 or move back as soon as lower 3. 
+    if(!forEndCursor){
+        int multiplier = (int)ceil(abs(cursorX) / (double)baseScroll);
+        if(currHorizScroll > 0 && cursorX < 3){
+            DEBG_PRINT("Horiz scroll case 1.\n");
+            newHorizScroll = -(multiplier * baseScroll);
+        } else if(cursorX > lastGuiWidth-3) {
+            DEBG_PRINT("Horiz scroll case 2.\n");
+            newHorizScroll = +(multiplier * baseScroll);
+        }
+    } else{
+       int multiplier = (int)ceil(abs(cursorEndX) / (double)baseScroll);
+        if(currHorizScroll > 0 && cursorEndX < 3){
+            DEBG_PRINT("Horiz scroll case 3.\n");
+            newHorizScroll = -(multiplier * baseScroll);
+        } else if(cursorEndX > lastGuiWidth-3) {
+            DEBG_PRINT("Horiz scroll case 4.\n");
+            newHorizScroll = +(multiplier * baseScroll);
+        } 
+    }
+
+    if (newHorizScroll != 0){
+        DEBG_PRINT("Auto horiz scroll has found need for update: %d.\n", newHorizScroll);
+        changeHorizontalScrollOffset(newHorizScroll);
+        cursorX += -newHorizScroll;
+        cursorEndX += -newHorizScroll;
+        refreshFlag = true;
+        return true;
+    } else{
+        DEBG_PRINT("No need for horiz scroll update.\n");
+        return false;
+    }
+}
+
 /**
  * Function to automatically get correctly ordered start and end values of current selection range.
  * Simply returns identical values if not in range section mode.
@@ -1276,15 +1355,20 @@ void updateCursorAndMenu(){
         mvchgat(y, 0, -1, A_NORMAL, 0, NULL); // -1 signifies: till end of gui line
     }
 
+
     if(cursorNotInRangeSelectionState()){
+        autoAdjustHorizontalScrolling(false);
         // Perform this to ensure correct ranges still ensured:
-        relocateCursorNoUpdate(cursorX,cursorY);
+        //relocateCursorNoUpdate(cursorX,cursorY);
+        int horizOffs = getCurrHorizontalScrollOffset();
 
         if (lastGuiHeight >= MENU_HEIGHT) {
-            mvprintw(lastGuiHeight - 1, 0, "Ln %d, Col %d   Ctrl-l to quit", cursorY + 1, cursorX + 1);
+            mvprintw(lastGuiHeight - 1, 0, "Ln %d, Col %d   Ctrl-l to quit", cursorY + horizOffs + 1, cursorX + horizOffs + 1);
             clrtoeol(); // Clear rest of status line
         }
     } else{
+
+        autoAdjustHorizontalScrolling(true);
 
         int startX = -1, startY = -1, endX = -1, endY = -1;
         getCurrentSelectionRang(&startX, &endX, &startY, &endY);
@@ -1299,12 +1383,13 @@ void updateCursorAndMenu(){
         }
         
         if (lastGuiHeight >= MENU_HEIGHT) {
-            mvprintw(lastGuiHeight - 1, 0, "Ln %d-%d, Col %d-%d   Ctrl-l to quit", cursorY + getCurrHorizontalScrollOffset() + 1, cursorEndY + getCurrHorizontalScrollOffset() +1, cursorX + 1, cursorEndX +1);
+            int horizOffs = getCurrHorizontalScrollOffset();
+            mvprintw(lastGuiHeight - 1, 0, "Ln %d-%d, Col %d-%d   Ctrl-l to quit", cursorY + horizOffs + 1, cursorEndY + horizOffs +1, cursorX + horizOffs + 1, cursorEndX + horizOffs +1);
             clrtoeol(); // Clear rest of status line
         }
 
     }
-    DEBG_PRINT("Ncurses cursor moved to X:%d, Y:%d\n", cursorEndX, cursorEndY);
+    DEBG_PRINT("Ncurses cursor moved to screen pos X:%d, Y:%d\n", cursorEndX, cursorEndY);
     move(cursorY, cursorX);
     refresh();
 }
