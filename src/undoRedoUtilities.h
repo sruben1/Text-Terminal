@@ -6,12 +6,16 @@
 /**
  * An operation is identified by the first and last nodes
  * that span the range of nodes which are affected by the operation.
+ * It also stores the sequence's statistics before the operation.
  */
 typedef struct {
     DescriptorNode *first;
     DescriptorNode *oldNext; // The old next node of the first node
     DescriptorNode *last;
     DescriptorNode *oldPrev; // The old previous node of the last node
+
+    int wordCount; // Word count before the operation
+    int lineCount; // Line count before the operation
 
     // For optimization, some insertions simply extend a node.
     // In this case first stores the node to extend and the other nodes are NULL.

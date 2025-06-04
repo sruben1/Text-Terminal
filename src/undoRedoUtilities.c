@@ -30,6 +30,8 @@ Operation* undoOperation(Sequence *sequence, Operation *operation) {
     DescriptorNode *oldNext = operation->oldNext;
     DescriptorNode *last = operation->last;
     DescriptorNode *oldPrev = operation->oldPrev;
+    int prevWordCount = operation->wordCount;
+    int prevLineCount = operation->lineCount;
     int optimizedCase = operation->optimizedCase;
     unsigned long optimizedCaseSize = operation->optimizedCaseSize;
     free(operation); 
@@ -42,6 +44,8 @@ Operation* undoOperation(Sequence *sequence, Operation *operation) {
         }
         // Restore the size of the first node
         first->size -= optimizedCaseSize;
+
+        // Create an inverse operation
         Operation *inverse = (Operation*) malloc(sizeof(Operation));
         if (inverse == NULL) {
             ERR_PRINT("Failed to allocate memory for inverse operation in optimized case.\n");
@@ -51,8 +55,15 @@ Operation* undoOperation(Sequence *sequence, Operation *operation) {
         inverse->oldNext = NULL;
         inverse->last = NULL;
         inverse->oldPrev = NULL;
+        inverse->wordCount = sequence->wordCount;
+        inverse->lineCount = sequence->lineCount;
         inverse->optimizedCase = 1; // Indicate this is an optimized case
         inverse->optimizedCaseSize = -optimizedCaseSize; // Negative to revert the size change
+        
+        // Update the sequence statistics
+        sequence->wordCount = prevWordCount;
+        sequence->lineCount = prevLineCount;
+        
         return inverse;
     }
         
@@ -71,10 +82,18 @@ Operation* undoOperation(Sequence *sequence, Operation *operation) {
     inverse->oldNext = first->next_ptr; 
     inverse->last = last;
     inverse->oldPrev = last->prev_ptr;
+    inverse->wordCount = sequence->wordCount;
+    inverse->lineCount = sequence->lineCount;
+    inverse->optimizedCase = 0; // Not an optimized case
+    inverse->optimizedCaseSize = 0; // Not used in this case
 
     // Restore the piece table by reconnecting the nodes
     first->next_ptr = oldNext;
     last->prev_ptr = oldPrev;
+
+    // Update the sequence statistics
+    sequence->wordCount = prevWordCount;
+    sequence->lineCount = prevLineCount;
 
     return inverse; 
 }

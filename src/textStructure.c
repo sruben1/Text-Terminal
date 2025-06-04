@@ -369,6 +369,10 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
     return -1;
   } 
 
+  // Store previous statistics for undo
+  int prevWordCount = sequence->wordCount;
+  int prevLineCount = sequence->lineCount;
+
   // Increase the line count if the sequence was empty
   if (position == 0 && sequence->pieceTable.first->next_ptr == sequence->pieceTable.last) {
     sequence->lineCount++;
@@ -400,6 +404,8 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
       operation->first = toExtend.node;
       operation->optimizedCase = 1;
       operation->optimizedCaseSize = byteSize;
+      operation->wordCount = prevWordCount;
+      operation->lineCount = prevLineCount;
       operation->oldNext = NULL; // Not used in optimized case
       operation->last = NULL;
       operation->oldPrev = NULL; 
@@ -466,6 +472,8 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
     operation->oldNext = next;
     operation->last = next;
     operation->oldPrev = prev;
+    operation->wordCount = prevWordCount;
+    operation->lineCount = prevLineCount;
     operation->optimizedCase = 0; // Not an optimized case
     operation->optimizedCaseSize = 0; // Not used in this case
     if (pushOperation(sequence->undoStack, operation) == 0) {
@@ -523,6 +531,8 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
     operation->oldNext = foundNode;
     operation->last = foundNode->next_ptr;
     operation->oldPrev = foundNode;
+    operation->wordCount = prevWordCount;
+    operation->lineCount = prevLineCount;
     operation->optimizedCase = 0; // Not an optimized case
     operation->optimizedCaseSize = 0; // Not used in this case
     if (pushOperation(sequence->undoStack, operation) == 0) {
@@ -602,6 +612,8 @@ ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosit
   operation->oldNext = startNode;
   operation->last = endNode->next_ptr;
   operation->oldPrev = endNode;
+  operation->wordCount = sequence->wordCount;
+  operation->lineCount = sequence->lineCount;
   operation->optimizedCase = 0; // Not an optimized case
   operation->optimizedCaseSize = 0; // Not used in this case
   if (pushOperation(sequence->undoStack, operation) == 0) {
