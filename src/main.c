@@ -728,8 +728,9 @@ void process_input(void) {
         DEBG_PRINT("Processing Ctrl+P (paste)\n");
         if (pasteFromClipboard(activeSequence, cursorY, cursorX) > 0) {
             DEBG_PRINT("Paste successful\n");
-            changeAndupdateCursorAndMenu(copyXoffset,copyYoffset);
-
+            cursorX += copyXoffset;
+            cursorY += copyYoffset;
+            resetRangeSelectionState();
             refreshFlag = true;
             setLineStatsNotUpdated();
             if (lastGuiHeight >= MENU_HEIGHT) {
