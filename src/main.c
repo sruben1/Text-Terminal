@@ -475,7 +475,8 @@ char* getFromXclip(void) {
         return buffer;
     }
 }
-
+ int copyYoffset = 0;
+int copyXoffset = 0;
 ReturnCode copySelectionToClipboard(Sequence* sequence) {
     if (sequence == NULL) {
         ERR_PRINT("Invalid sequence for copy operation\n");
@@ -486,6 +487,9 @@ ReturnCode copySelectionToClipboard(Sequence* sequence) {
     int startX, endX, startY, endY;
     getCurrentSelectionRang(&startX, &endX, &startY, &endY);
     
+    copyYoffset = endY-startY;
+    copyXoffset = endX-startY;
+
     // Use getAbsoluteAtomicIndex to get positions
     int startPos = getAbsoluteAtomicIndex(startY, startX, sequence);
     int endPos = getAbsoluteAtomicIndex(endY, endX, sequence)-1;
@@ -724,9 +728,10 @@ void process_input(void) {
         DEBG_PRINT("Processing Ctrl+P (paste)\n");
         if (pasteFromClipboard(activeSequence, cursorY, cursorX) > 0) {
             DEBG_PRINT("Paste successful\n");
+            changeAndupdateCursorAndMenu(copyXoffset,copyYoffset);
+
             refreshFlag = true;
             setLineStatsNotUpdated();
-            
             if (lastGuiHeight >= MENU_HEIGHT) {
                 mvprintw(lastGuiHeight - 1, 0, "Text pasted   Ctrl-l to quit");
                 refresh();
