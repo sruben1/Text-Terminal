@@ -67,6 +67,7 @@ typedef struct {
   OperationStack *redoStack;
   int wordCount;
   int lineCount;
+  SearchResult lastLineResult; // Internal cache
 } Sequence;
 
 /*

@@ -27,12 +27,6 @@ static struct _lastInsert {
   int _lastCharSize;
   long int _lastWritePos;
 } _lastInsert = {-1,-1, -1};
-static struct lastLineResult {
-  int valid; // 1 if valid, 0 if not
-  Position position; // an atomic position (anywhere) in the line
-  int lineNumber;
-} lastLineResult = {0, -1, -1};
-
 
 /*------ Declarations ------ */
 NodeResult getNodeForPosition(Sequence *sequence, Position position);
@@ -74,6 +68,8 @@ Sequence* empty(){
   }
   newSeq->wordCount = 0;
   newSeq->lineCount = 0;
+  newSeq->lastLineResult.foundPosition = -1;
+  newSeq->lastLineResult.lineNumber = -1;
 
   // Create sentinel nodes for the piece table
   DescriptorNode* firstNode = (DescriptorNode*) malloc(sizeof(DescriptorNode));
@@ -353,15 +349,17 @@ int getLineNumber(Sequence *sequence, Position position) {
   int offsetInNode = 0;
 
   // If the position comes after the position of the last known line result, we can start from there
-  if (lastLineResult.valid && lastLineResult.position <= position) {
-    NodeResult nodeResult = getNodeForPosition(sequence, lastLineResult.position);
+  Position lastPosition = sequence->lastLineResult.foundPosition;
+  if (lastPosition != -1 && lastPosition <= position) {
+    DEBG_PRINT("Using cached last line result for position %d.\n", lastPosition);
+    NodeResult nodeResult = getNodeForPosition(sequence, lastPosition);
     if (nodeResult.node == NULL) {
       return -1; // Position out of bounds
     }
-    lineNumber = lastLineResult.lineNumber;
-    stepsAmount = position - lastLineResult.position;
+    lineNumber = sequence->lastLineResult.lineNumber;
+    stepsAmount = position - lastPosition;
     currNode = nodeResult.node;
-    offsetInNode = lastLineResult.position - nodeResult.startPosition;
+    offsetInNode = lastPosition - nodeResult.startPosition;
   }
 
   Atomic *buffer = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
@@ -455,6 +453,11 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
   if (newlyWrittenBufferOffset == -1){
     ERR_PRINT("Insert failed at write to add buffer.\n");
     return -1;
+  } 
+
+  // Make cache invalid if necessary
+  if (position <= sequence->lastLineResult.foundPosition) {
+    sequence->lastLineResult.foundPosition = -1; 
   } 
 
   // Store previous statistics for undo
@@ -688,6 +691,11 @@ ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosit
     return -1;
   }
 
+  // Make cache invalid if necessary
+  if (beginPosition <= sequence->lastLineResult.foundPosition) {
+    sequence->lastLineResult.foundPosition = -1; 
+  } 
+
   // Get the statistics effect of the deletion
   TextStatistics stats = calculateStatsEffect(sequence, startNode, distanceInStartBlock, endNode, distanceInEndBlock, getCurrentLineBidentifier());
 
@@ -822,6 +830,9 @@ SearchResult find(Sequence *sequence, wchar_t *textToFind, Position startPositio
           // We only have to get the line number before startPosition (which is faster to do)
           result.lineNumber = getLineNumber(sequence, startPosition - 1) + countedLineBreaks;
         }
+        // Update cached last line result
+        sequence->lastLineResult.foundPosition = result.foundPosition; 
+        sequence->lastLineResult.lineNumber = result.lineNumber; 
         return result;
       }
       currentPosition++;

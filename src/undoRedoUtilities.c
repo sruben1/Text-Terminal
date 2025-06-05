@@ -36,6 +36,8 @@ Operation* undoOperation(Sequence *sequence, Operation *operation) {
     unsigned long optimizedCaseSize = operation->optimizedCaseSize;
     free(operation); 
 
+    sequence->lastLineResult.foundPosition = -1; // Make cache invalid
+
     if (optimizedCase) {
         // Handle optimized case where the operation is just an extension of a node
         if (first == NULL) {
