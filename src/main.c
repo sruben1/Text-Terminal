@@ -21,6 +21,18 @@
 
 #define MENU_HEIGHT 2 //lines of menu
 
+#define BUTTON_HEIGHT 1
+#define BUTTON_SAVE_WIDTH 6
+#define BUTTON_SEARCH_WIDTH 8  
+#define BUTTON_SR_WIDTH 5
+#define BUTTON_SPACING 2
+
+typedef struct {
+    int x, y, width;
+    char* label;
+    bool pressed;
+} Button;
+Button buttons[3];
 /*
 =========================
   Text sequence data structure
@@ -351,11 +363,94 @@ void init_editor(void) {
         fprintf(stderr, "Error: terminal too small (need at least 3x10)\n");
         exit(EXIT_FAILURE);
     }
-    
+    init_buttons();
+
     // Initialize line statistics for first (initial) iteration
     updateLine(0, 0, 0);
     refreshFlag = true;
 }
+
+void init_buttons() {
+    int start_x = 2; // Start buttons 2 characters from left edge
+    
+    // Save button
+    buttons[0].x = start_x;
+    buttons[0].y = lastGuiHeight - 1;
+    buttons[0].width = BUTTON_SAVE_WIDTH;
+    buttons[0].label = "Save";
+    buttons[0].pressed = false;
+    
+    // Search button  
+    buttons[1].x = start_x + BUTTON_SAVE_WIDTH + BUTTON_SPACING;
+    buttons[1].y = lastGuiHeight - 1;
+    buttons[1].width = BUTTON_SEARCH_WIDTH;
+    buttons[1].label = "Search";
+    buttons[1].pressed = false;
+    
+    // S&R button
+    buttons[2].x = start_x + BUTTON_SAVE_WIDTH + BUTTON_SPACING + BUTTON_SEARCH_WIDTH + BUTTON_SPACING;
+    buttons[2].y = lastGuiHeight - 1;
+    buttons[2].width = BUTTON_SR_WIDTH;
+    buttons[2].label = "S&R";
+    buttons[2].pressed = false;
+}
+
+// Draw all buttons
+void draw_buttons() {
+    if (lastGuiHeight < MENU_HEIGHT) return;
+    
+    for (int i = 0; i < 3; i++) {
+        // Set button appearance based on pressed state
+        if (buttons[i].pressed) {
+            attron(A_REVERSE); // Inverted colors for pressed state
+        }
+        
+        // Draw button background
+        mvprintw(buttons[i].y, buttons[i].x, "[%s]", buttons[i].label);
+        
+        if (buttons[i].pressed) {
+            attroff(A_REVERSE);
+        }
+    }
+}
+
+int check_button_click(int mouse_x, int mouse_y) {
+    for (int i = 0; i < 3; i++) {
+        if (mouse_y == buttons[i].y && 
+            mouse_x >= buttons[i].x && 
+            mouse_x <= buttons[i].x + buttons[i].width + 1) { // +1 for brackets
+            return i;
+        }
+    }
+    return -1;
+}
+
+void handle_button_press(int button_index) {
+    switch (button_index) {
+        case 0: // Save button
+            DEBG_PRINT("Save button pressed\n");
+            // TODO: Implement save functionality
+            // You'll need to add file saving logic here
+            mvprintw(lastGuiHeight - 1, buttons[2].x + buttons[2].width + 10, "File saved!");
+            refresh();
+            break;
+            
+        case 1: // Search button
+            DEBG_PRINT("Search button pressed\n");
+            currMenuState = FIND; // Use your existing search state
+            menuCursor = 0;
+            refreshFlag = true;
+            break;
+            
+        case 2: // S&R (Search & Replace) button
+            DEBG_PRINT("S&R button pressed\n");
+            currMenuState = F_AND_R1; // Use your existing find & replace state
+            menuCursor = 0;
+            refreshFlag = true;
+            break;
+    }
+}
+
 //paste
 ReturnCode pasteFromClipboard(Sequence* sequence, int cursorY, int cursorX) {
     if (sequence == NULL) {
@@ -698,6 +793,9 @@ void checkSizeChanged(void){
         lastGuiHeight = new_y;
         lastGuiWidth = new_x;
         
+        init_buttons();
+
+
         // Validate cursor position after resize
         if (cursorY >= lastGuiHeight - MENU_HEIGHT) {
             cursorY = lastGuiHeight - MENU_HEIGHT - 1;
@@ -792,27 +890,37 @@ if (status == OK && wch == CTRL_KEY('y')) {
         int posStart = -1; // Used for delete and backspace
         int posEnd = -1; // Used for delete and backspace
         switch (wch){
-            case KEY_MOUSE: // All mouse handling here (menu buttons, mouse cursor interactions, etc.)
+            case KEY_MOUSE:
                 MEVENT event;
                 if (getmouse(&event) == OK) {
                     DEBG_PRINT("Handling MOUSE event.\n");
                     if (event.bstate & BUTTON1_CLICKED) {
-                        if (event.y < lastGuiHeight - MENU_HEIGHT){
+                        // Check if click is on a button first
+                        int button_clicked = check_button_click(event.x, event.y);
+                        if (button_clicked != -1) {
+                            // Button was clicked
+                            buttons[button_clicked].pressed = true;
+                            draw_buttons();
+                            refresh();
+                            
+                            // Small delay to show button press
+                            napms(100);
+                            
+                            buttons[button_clicked].pressed = false;
+                            handle_button_press(button_clicked);
+                            updateCursorAndMenu();
+                        }
+                        else if (event.y < lastGuiHeight - MENU_HEIGHT) {
+                            // Text area click
                             currMenuState = NOT_IN_MENU;
-                            // Text cursor case:
-                                relocateAndupdateCursorAndMenu(event.x, event.y);
-                        }  else{
-                            // Menu interactions case:
-
+                            relocateAndupdateCursorAndMenu(event.x, event.y);
                         }
                     } 
                     else if (event.bstate & BUTTON1_DOUBLE_CLICKED) {
-                        // Dragging end coordinates:
-                        DEBG_PRINT("Drag ended at: X:%d Y:%d",event.x, event.y);
+                        DEBG_PRINT("Drag ended at: X:%d Y:%d", event.x, event.y);
                         relocateRangeEndAndUpdate(event.x, event.y);
                     }
-                }  
-
+                }
                 break;
             /*---- Standard Cursor ----*/
             case KEY_UP:
@@ -1370,7 +1478,6 @@ void updateCursorAndMenu(){
         mvchgat(y, 0, -1, A_NORMAL, 0, NULL); // -1 signifies: till end of gui line
     }
 
-
     if(cursorNotInRangeSelectionState()){
         autoAdjustHorizontalScrolling(false);
         // Perform this to ensure correct ranges still ensured:
@@ -1378,17 +1485,25 @@ void updateCursorAndMenu(){
         int horizOffs = getCurrHorizontalScrollOffset();
 
         if (lastGuiHeight >= MENU_HEIGHT) {
-            mvprintw(lastGuiHeight - 1, 0, "Ln %d, Col %d   Ctrl-l to quit", cursorY + horizOffs + 1, cursorX + horizOffs + 1);
-            clrtoeol(); // Clear rest of status line
+            // Clear the status line first
+            move(lastGuiHeight - 1, 0);
+            clrtoeol();// Clear rest of status line
+            
+            // Draw buttons first
+            draw_buttons();
+            
+            // Then draw status text after the buttons
+            int status_x = buttons[2].x + buttons[2].width + 10;
+            mvprintw(lastGuiHeight - 1, status_x, "Ln %d, Col %d   Ctrl-l to quit", 
+                     cursorY + horizOffs + 1, cursorX + horizOffs + 1);
         }
-    } else{
-
+    } else {
         autoAdjustHorizontalScrolling(true);
 
         int startX = -1, startY = -1, endX = -1, endY = -1;
         getCurrentSelectionRang(&startX, &endX, &startY, &endY);
         if (startY == endY){
-            mvchgat(endY, startX, endX-startX, A_REVERSE, 0, NULL); // Format in inverted color scheme
+            mvchgat(endY, startX, endX-startX, A_REVERSE, 0, NULL);// Format in inverted color scheme
         } else{
             mvchgat(startY, startX, -1, A_REVERSE, 0, NULL);
             mvchgat(endY, 0, endX, A_REVERSE, 0, NULL);
@@ -1398,17 +1513,25 @@ void updateCursorAndMenu(){
         }
         
         if (lastGuiHeight >= MENU_HEIGHT) {
+            move(lastGuiHeight - 1, 0);
+            clrtoeol();
+            
+            // Draw buttons
+            draw_buttons();
+            
+            // Draw selection status
             int horizOffs = getCurrHorizontalScrollOffset();
-            mvprintw(lastGuiHeight - 1, 0, "Ln %d-%d, Col %d-%d   Ctrl-l to quit", cursorY + horizOffs + 1, cursorEndY + horizOffs +1, cursorX + horizOffs + 1, cursorEndX + horizOffs +1);
-            clrtoeol(); // Clear rest of status line
+            int status_x = buttons[2].x + buttons[2].width + 10;
+            mvprintw(lastGuiHeight - 1, status_x, "Ln %d-%d, Col %d-%d   Ctrl-l to quit", 
+                     cursorY + horizOffs + 1, cursorEndY + horizOffs +1, 
+                     cursorX + horizOffs + 1, cursorEndX + horizOffs +1);
         }
-
     }
+    
     DEBG_PRINT("Ncurses cursor moved to screen pos X:%d, Y:%d\n", cursorEndX, cursorEndY);
     move(cursorY, cursorX);
     refresh();
 }
-
 /**
  * Function to know if currently in range selection mode. 
  * Use this every time range and normal selection modes need different handling.
