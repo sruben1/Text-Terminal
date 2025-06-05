@@ -22,20 +22,26 @@ static LineBidentifier _currLineBidentifier = NONE_ID;
 static int fdOfCurrentOpenFile = 0;
 static bool currentlySaved = true;
 static Atomic endOfTextSignal = END_OF_TEXT_CHAR;
-static struct _lastInsert
-{
+static struct _lastInsert {
   int _lastAtomicPos;
   int _lastCharSize;
   long int _lastWritePos;
-} _lastInsert ={-1,-1, -1};
+} _lastInsert = {-1,-1, -1};
+static struct lastLineResult {
+  int valid; // 1 if valid, 0 if not
+  Position position; // an atomic position (anywhere) in the line
+  int lineNumber;
+} lastLineResult = {0, -1, -1};
 
 
 /*------ Declarations ------ */
 NodeResult getNodeForPosition(Sequence *sequence, Position position);
-ReturnCode writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert, int *sizeOfCharOrNull);
 int isContinuationByte(Sequence *sequence, DescriptorNode *node, int offsetInBlock);
 int amountOfContinuationBytes(Sequence *sequence, DescriptorNode *node, int offsetInBlock);
 size_t getUtf8ByteSize(const wchar_t* wstr);
+ReturnCode writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert, int *sizeOfCharOrNull);
+int textMatchesBuffer(Sequence *sequence, DescriptorNode *node, int offset, Atomic *needle, size_t needleSize);
+int getLineNumber(Sequence *sequence, Position position);
 
 /*
 =========================
@@ -135,12 +141,12 @@ Sequence* loadOrCreateNewFile( char *pathname ){
 */
 
 ReturnCode closeSequence( Sequence *sequence, bool forceFlag ){
-  freeOperationStack(sequence->undoStack);
-  freeOperationStack(sequence->redoStack);
   if(!forceFlag && currentlySaved == false){
     return -1;
   } 
   if(sequence != NULL){
+    freeOperationStack(sequence->undoStack);
+    freeOperationStack(sequence->redoStack);
     DescriptorNode* curr = sequence->pieceTable.first;
     while(curr != NULL){
       DescriptorNode* next = curr->next_ptr;
@@ -298,6 +304,40 @@ Position writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert, int *sizeOf
     sequence->addBuffer.size += byteLength;
 
     return (Position) offset;
+}
+
+/**
+ * Compares the given text (needle) with the text starting at a given node and offset inside the node.
+ * Returns 1 if the text matches, 0 if it does not match.
+ */
+int textMatchesBuffer(Sequence *sequence, DescriptorNode *node, int offset, Atomic *needle, size_t needleSize) {
+  DescriptorNode* currNode = node;
+  int currentOffset = offset;
+  Atomic *data = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+
+  for (int i = 0; i < needleSize; i++) {
+    // Get the correct node and data for the i-th character
+    while (currentOffset >= currNode->size) {
+      currNode = currNode->next_ptr;
+      if (currNode == sequence->pieceTable.last) {
+        return 0; // Reached the end of the piece table without finding a match
+      }
+      currentOffset = 0;
+      data = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+    }
+
+    if (data[currNode->offset + currentOffset] != needle[i]) {
+      return 0; // Mismatch found
+    }
+    
+    currentOffset++;
+  }
+  
+  return 1; // All characters matched
+}
+
+int getLineNumber(Sequence *sequence, Position position) {
+  return 0; // TODO: Implement
 }
 
 /*
@@ -679,6 +719,72 @@ ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosit
   
   return 1;
 }
+
+SearchResult find(Sequence *sequence, wchar_t *textToFind, Position startPosition) {
+  SearchResult result = {-1, -1}; // Initialize with invalid values
+  if (sequence == NULL || textToFind == NULL || startPosition < 0) {
+    return result; // Error
+  }
+
+  NodeResult startNode = getNodeForPosition(sequence, startPosition);
+  if (startNode.node == NULL || wcslen(textToFind) == 0) {
+    return result; // StartPosition out of bounds or empty search text
+  }
+
+  // Convert wcstring to UTF-8
+  size_t needleLength = getUtf8ByteSize(textToFind);
+  Atomic *needle = malloc(needleLength * sizeof(Atomic));
+  if (needle == NULL) {
+    return result; // Error: Memory allocation failed
+  }
+  wcstombs(needle, textToFind, needleLength);
+
+  Position currentPosition = startPosition;
+  DescriptorNode* currNode = startNode.node;
+  Atomic *data = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+  int offsetInNode = startPosition - startNode.startPosition;
+  int endTraversed = 0; // Flag to indicate if the end of the piece table has been reached
+  int countedLineBreaks = 0; // Keep track of line breaks on the way
+  LineBidentifier lineBreakId = getCurrentLineBidentifier();
+
+  // Search until we are back at the start position
+  while (!endTraversed || currentPosition < startPosition) {
+    // Go back to the beginning of the piece table if the end was reached
+    if (currNode == sequence->pieceTable.last) {
+      endTraversed = 1;
+      currentPosition = 0;
+      countedLineBreaks = 1; // We can assume that there exists at least one line otherwise there will be no match
+      offsetInNode = 0;
+      currNode = sequence->pieceTable.first->next_ptr;
+      data = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+      continue;
+    }
+
+    // Check if the current node contains a match
+    while (offsetInNode < currNode->size) {
+      if (data[currNode->offset + offsetInNode] == lineBreakId) {
+        countedLineBreaks++;
+      }
+      if (textMatchesBuffer(sequence, currNode, offsetInNode, needle, needleLength)) { // Match found
+        result.foundPosition = currentPosition;
+        if (endTraversed) {
+          result.lineNumber = countedLineBreaks;
+        } else {
+          // We only have to query the line number before the startPosition (which is faster to get)
+          result.lineNumber = getLineNumber(sequence, startPosition - 1) + countedLineBreaks;
+        }
+        return result;
+      }
+      currentPosition++;
+      offsetInNode++;
+    }
+
+    // Otherwise move to the next node
+    currNode = currNode->next_ptr;
+    data = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+    offsetInNode = 0; // Reset offset for the next node
+  }
+}  
 
 /*
 =========================
