@@ -1493,8 +1493,8 @@ void updateCursorAndMenu(){
             draw_buttons();
             
             // Then draw status text after the buttons
-            int status_x = buttons[2].x + buttons[2].width + 10;
-            mvprintw(lastGuiHeight - 1, status_x, "Ln %d, Col %d   Ctrl-l to quit", 
+            int status_x =  0;
+            mvprintw(lastGuiHeight - 2, status_x, "Ln %d, Col %d   Ctrl-l to quit", 
                      cursorY + horizOffs + 1, cursorX + horizOffs + 1);
         }
     } else {
