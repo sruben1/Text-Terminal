@@ -414,6 +414,105 @@ void draw_buttons() {
     }
 }
 
+void handle_button_press(int button_index) {
+    switch (button_index) {
+        case 0: // Save button
+            DEBG_PRINT("Save button pressed\n");
+            // TODO: Implement save functionality
+            // You'll need to add file saving logic here
+            if (lastGuiHeight >= MENU_HEIGHT) {
+                mvprintw(lastGuiHeight - 1, buttons[2].x + buttons[2].width + 10, "File saved!");
+                refresh();
+            }
+            break;
+            
+        case 1: // Search button
+            DEBG_PRINT("Search button pressed\n");
+            currMenuState = FIND;
+            menuCursor = 0;
+            // Clear the search input
+            wmemset(firstMenuInput, L'\0', MAX_MENU_INPUT);
+            refreshFlag = true;
+            break;
+            
+        case 2: // S&R (Search & Replace) button
+            DEBG_PRINT("S&R button pressed\n");
+            currMenuState = F_AND_R1;
+            menuCursor = 0;
+            // Clear both inputs
+            wmemset(firstMenuInput, L'\0', MAX_MENU_INPUT);
+            wmemset(secondMenuInput, L'\0', MAX_MENU_INPUT);
+            refreshFlag = true;
+            break;
+    }
+}
+
+void draw_text_input_field(int y, int x, int width, const wchar_t* prompt, const wchar_t* input, int cursor_pos, bool active) {
+    // Clear the input area
+    mvprintw(y, x, "%*s", width, "");
+    
+    // Draw prompt
+    mvprintw(y, x, "%ls: ", prompt);
+    int prompt_len = wcslen(prompt) + 2; // +2 for ": "
+    
+    // Draw input box
+    mvprintw(y, x + prompt_len, "[");
+    mvprintw(y, x + prompt_len + width - 1, "]");
+    
+    // Draw input text
+    if (wcslen(input) > 0) {
+        // Convert wide string to multibyte for printing
+        size_t input_len = wcslen(input);
+        char* mb_input = malloc((input_len * 4 + 1) * sizeof(char)); // UTF-8 can be up to 4 bytes per char
+        if (mb_input) {
+            wcstombs(mb_input, input, input_len * 4);
+            mvprintw(y, x + prompt_len + 1, "%.*s", width - 3, mb_input);
+            free(mb_input);
+        }
+    }
+    
+    // Position cursor if this field is active
+    if (active) {
+        move(y, x + prompt_len + 1 + cursor_pos);
+    }
+}
+
+void draw_menu_interface() {
+    if (currMenuState == NOT_IN_MENU) return;
+    
+    int menu_y = lastGuiHeight - 2;
+    int field_width = 30;
+    
+    switch (currMenuState) {
+        case FIND:
+        case FIND_CYCLE:
+            // Clear the menu line
+            mvprintw(menu_y, 0, "%*s", lastGuiWidth, "");
+            draw_text_input_field(menu_y, 2, field_width, L"Search", firstMenuInput, menuCursor, true);
+            mvprintw(menu_y, field_width + 10, "Press Enter to search, Esc to cancel");
+            break;
+            
+        case F_AND_R1:
+            // Clear the menu line
+            mvprintw(menu_y, 0, "%*s", lastGuiWidth, "");
+            draw_text_input_field(menu_y, 2, field_width, L"Find", firstMenuInput, menuCursor, true);
+            mvprintw(menu_y, field_width + 10, "Press Enter to continue");
+            break;
+            
+        case F_AND_R2:
+        case F_AND_R_CYCLE:
+            // Clear both menu lines
+            mvprintw(menu_y - 1, 0, "%*s", lastGuiWidth, "");
+            mvprintw(menu_y, 0, "%*s", lastGuiWidth, "");
+            
+            // Draw both input fields
+            draw_text_input_field(menu_y - 1, 2, field_width, L"Find", firstMenuInput, 0, false);
+            draw_text_input_field(menu_y, 2, field_width, L"Replace", secondMenuInput, menuCursor, true);
+            mvprintw(menu_y, field_width + 10, "Press Enter to replace, Esc to cancel");
+            break;
+    }
+}
+
 int check_button_click(int mouse_x, int mouse_y) {
     for (int i = 0; i < 3; i++) {
         if (mouse_y == buttons[i].y && 
@@ -425,28 +524,100 @@ int check_button_click(int mouse_x, int mouse_y) {
     return -1;
 }
 
-void handle_button_press(int button_index) {
-    switch (button_index) {
-        case 0: // Save button
-            DEBG_PRINT("Save button pressed\n");
-            // TODO: Implement save functionality
-            mvprintw(lastGuiHeight - 1, buttons[2].x + buttons[2].width + 10, "File saved!");
-            refresh();
-            break;
-            
-        case 1: // Search button
-            DEBG_PRINT("Search button pressed\n");
-            currMenuState = FIND; 
-            menuCursor = 0;
-            refreshFlag = true;
-            break;
-            
-        case 2: // S&R (Search & Replace) button
-            DEBG_PRINT("S&R button pressed\n");
-            currMenuState = F_AND_R1; 
-            menuCursor = 0;
-            refreshFlag = true;
-            break;
+
+void handle_menu_input(wint_t wch, int status) {
+    if (currMenuState == NOT_IN_MENU) return;
+    
+    if (status == KEY_CODE_YES) {
+        switch (wch) {
+            case KEY_LEFT:
+                if (menuCursor > 0) {
+                    menuCursor--;
+                    refreshFlag = true;
+                }
+                break;
+                
+            case KEY_RIGHT:
+                if (currMenuState == FIND || currMenuState == F_AND_R1) {
+                    if (menuCursor < wcslen(firstMenuInput)) {
+                        menuCursor++;
+                        refreshFlag = true;
+                    }
+                } else if (currMenuState == F_AND_R2) {
+                    if (menuCursor < wcslen(secondMenuInput)) {
+                        menuCursor++;
+                        refreshFlag = true;
+                    }
+                }
+                break;
+                
+            case KEY_BACKSPACE:
+            case 8:
+                if (menuCursor > 0) {
+                    if (currMenuState == FIND || currMenuState == F_AND_R1) {
+                        // Remove character from firstMenuInput
+                        wmemmove(&firstMenuInput[menuCursor-1], &firstMenuInput[menuCursor], 
+                                wcslen(firstMenuInput) - menuCursor + 1);
+                    } else if (currMenuState == F_AND_R2) {
+                        // Remove character from secondMenuInput
+                        wmemmove(&secondMenuInput[menuCursor-1], &secondMenuInput[menuCursor], 
+                                wcslen(secondMenuInput) - menuCursor + 1);
+                    }
+                    menuCursor--;
+                    refreshFlag = true;
+                }
+                break;
+        }
+    } else if (status == OK) {
+        switch (wch) {
+            case 27: // Escape key
+                currMenuState = NOT_IN_MENU;
+                refreshFlag = true;
+                break;
+                
+            case KEY_ENTER:
+            case 10:
+            case 13:
+                if (currMenuState == FIND) {
+                    // TODO: Implement search functionality using firstMenuInput
+                    DEBG_PRINT("Searching for: %ls\n", firstMenuInput);
+                    currMenuState = NOT_IN_MENU;
+                    refreshFlag = true;
+                } else if (currMenuState == F_AND_R1) {
+                    currMenuState = F_AND_R2;
+                    menuCursor = 0;
+                    refreshFlag = true;
+                } else if (currMenuState == F_AND_R2) {
+                    // TODO: Implement find and replace functionality
+                    DEBG_PRINT("Find: %ls, Replace: %ls\n", firstMenuInput, secondMenuInput);
+                    currMenuState = NOT_IN_MENU;
+                    refreshFlag = true;
+                }
+                break;
+                
+            default:
+                // Handle regular character input
+                if (is_printable_unicode(wch)) {
+                    wchar_t* target_input = NULL;
+                    int max_len = MAX_MENU_INPUT - 1;
+                    
+                    if (currMenuState == FIND || currMenuState == F_AND_R1) {
+                        target_input = firstMenuInput;
+                    } else if (currMenuState == F_AND_R2) {
+                        target_input = secondMenuInput;
+                    }
+                    
+                    if (target_input && wcslen(target_input) < max_len) {
+                        // Insert character at cursor position
+                        wmemmove(&target_input[menuCursor+1], &target_input[menuCursor], 
+                                wcslen(target_input) - menuCursor + 1);
+                        target_input[menuCursor] = (wchar_t)wch;
+                        menuCursor++;
+                        refreshFlag = true;
+                    }
+                }
+                break;
+        }
     }
 }
 
@@ -1518,17 +1689,24 @@ void updateCursorAndMenu(){
             // Draw buttons
             draw_buttons();
             
-            // Draw selection status
-            int horizOffs = getCurrHorizontalScrollOffset();
-            int status_x = buttons[2].x + buttons[2].width + 10;
-            mvprintw(lastGuiHeight - 1, status_x, "Ln %d-%d, Col %d-%d   Ctrl-l to quit", 
-                     cursorY + horizOffs + 1, cursorEndY + horizOffs +1, 
-                     cursorX + horizOffs + 1, cursorEndX + horizOffs +1);
+            // Draw selection status if not in menu
+            if (currMenuState == NOT_IN_MENU) {
+                int horizOffs = getCurrHorizontalScrollOffset();
+                int status_x = buttons[2].x + buttons[2].width + 10;
+                mvprintw(lastGuiHeight - 1, status_x, "Ln %d-%d, Col %d-%d   Ctrl-l to quit", 
+                         cursorY + horizOffs + 1, cursorEndY + horizOffs +1, 
+                         cursorX + horizOffs + 1, cursorEndX + horizOffs +1);
+            }
         }
     }
     
-    DEBG_PRINT("Ncurses cursor moved to screen pos X:%d, Y:%d\n", cursorEndX, cursorEndY);
-    move(cursorY, cursorX);
+    // Position cursor appropriately
+    if (currMenuState != NOT_IN_MENU) {
+        // Cursor positioning is handled in draw_menu_interface
+    } else {
+        DEBG_PRINT("Ncurses cursor moved to screen pos X:%d, Y:%d\n", cursorX, cursorY);
+        move(cursorY, cursorX);
+    }
     refresh();
 }
 /**
