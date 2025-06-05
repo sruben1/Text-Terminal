@@ -313,20 +313,20 @@ Position writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert, int *sizeOf
 int textMatchesBuffer(Sequence *sequence, DescriptorNode *node, int offset, Atomic *needle, size_t needleSize) {
   DescriptorNode* currNode = node;
   int currentOffset = offset;
-  Atomic *data = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+  Atomic *buffer = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
 
   for (int i = 0; i < needleSize; i++) {
     // Get the correct node and data for the i-th character
     while (currentOffset >= currNode->size) {
       currNode = currNode->next_ptr;
-      if (currNode == sequence->pieceTable.last) {
+      if (currNode == sequence->pieceTable.last || currNode == NULL) {
         return 0; // Reached the end of the piece table without finding a match
       }
       currentOffset = 0;
-      data = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+      buffer = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
     }
 
-    if (data[currNode->offset + currentOffset] != needle[i]) {
+    if (buffer[currNode->offset + currentOffset] != needle[i]) {
       return 0; // Mismatch found
     }
     
@@ -336,8 +336,56 @@ int textMatchesBuffer(Sequence *sequence, DescriptorNode *node, int offset, Atom
   return 1; // All characters matched
 }
 
+/**
+ * Returns the line number for a given position in the sequence.
+ * If there is a line break at the position, the line break itself is allocated to the next line
+ * (e.g. a call for position 5 in "Hello\nWorld" will return 2, not 1).
+ * If the position is invalid, returns -1.
+ */
 int getLineNumber(Sequence *sequence, Position position) {
-  return 0; // TODO: Implement
+  if (sequence == NULL || position < 0) {
+    return -1; // Error
+  }
+
+  int lineNumber = 1;
+  int stepsAmount = position + 1; // Number of characters to traverse
+  DescriptorNode* currNode = sequence->pieceTable.first;
+  int offsetInNode = 0;
+
+  // If the position comes after the position of the last known line result, we can start from there
+  if (lastLineResult.valid && lastLineResult.position <= position) {
+    NodeResult nodeResult = getNodeForPosition(sequence, lastLineResult.position);
+    if (nodeResult.node == NULL) {
+      return -1; // Position out of bounds
+    }
+    lineNumber = lastLineResult.lineNumber;
+    stepsAmount = position - lastLineResult.position;
+    currNode = nodeResult.node;
+    offsetInNode = lastLineResult.position - nodeResult.startPosition;
+  }
+
+  Atomic *buffer = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+  LineBidentifier lineBreakId = getCurrentLineBidentifier();
+
+  for (int i = 0; i < stepsAmount; i++) {
+    // Get the correct node and data for the i-th character
+    while (offsetInNode >= currNode->size) {
+      currNode = currNode->next_ptr;
+      if (currNode == sequence->pieceTable.last || currNode == NULL) {
+        return -1; // Position out of bounds
+      }
+      offsetInNode = 0;
+      buffer = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+    }
+
+    if (buffer[currNode->offset + offsetInNode] == lineBreakId) {
+      lineNumber++; // Count a line break
+    } 
+
+    offsetInNode++;
+  }
+
+  return lineNumber;
 }
 
 /*
@@ -751,9 +799,10 @@ SearchResult find(Sequence *sequence, wchar_t *textToFind, Position startPositio
   while (!endTraversed || currentPosition < startPosition) {
     // Go back to the beginning of the piece table if the end was reached
     if (currNode == sequence->pieceTable.last) {
+      DEBG_PRINT("Find has reached the end of the piece table, going back to start.\n");
       endTraversed = 1;
       currentPosition = 0;
-      countedLineBreaks = 1; // We can assume that there exists at least one line otherwise there will be no match
+      countedLineBreaks = 0;
       offsetInNode = 0;
       currNode = sequence->pieceTable.first->next_ptr;
       data = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
@@ -767,10 +816,10 @@ SearchResult find(Sequence *sequence, wchar_t *textToFind, Position startPositio
       }
       if (textMatchesBuffer(sequence, currNode, offsetInNode, needle, needleLength)) { // Match found
         result.foundPosition = currentPosition;
-        if (endTraversed) {
-          result.lineNumber = countedLineBreaks;
+        if (endTraversed || startPosition == 0) {
+          result.lineNumber = countedLineBreaks + 1; // We can assume that there exists at least one line, otherwise there will be no match
         } else {
-          // We only have to query the line number before the startPosition (which is faster to get)
+          // We only have to get the line number before startPosition (which is faster to do)
           result.lineNumber = getLineNumber(sequence, startPosition - 1) + countedLineBreaks;
         }
         return result;
@@ -784,6 +833,8 @@ SearchResult find(Sequence *sequence, wchar_t *textToFind, Position startPositio
     data = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
     offsetInNode = 0; // Reset offset for the next node
   }
+
+  return result; // No match found
 }  
 
 /*
