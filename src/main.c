@@ -448,18 +448,17 @@ void handle_button_press(int button_index) {
 }
 
 void draw_text_input_field(int y, int x, int width, const wchar_t* prompt, const wchar_t* input, int cursor_pos, bool active) {
-    // Clear the input area
     mvprintw(y, x, "%*s", width, "");
     
-    // Draw prompt
+    // prompt
     mvprintw(y, x, "%ls: ", prompt);
-    int prompt_len = wcslen(prompt) + 2; // +2 for ": "
+    int prompt_len = wcslen(prompt) + 2; 
     
-    // Draw input box
+    // input box
     mvprintw(y, x + prompt_len, "[");
     mvprintw(y, x + prompt_len + width - 1, "]");
     
-    // Draw input text
+    // input text
     if (wcslen(input) > 0) {
         // Convert wide string to multibyte for printing
         size_t input_len = wcslen(input);
