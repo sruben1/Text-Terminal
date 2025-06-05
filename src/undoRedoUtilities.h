@@ -46,6 +46,7 @@ ReturnCode redo(Sequence *sequence);
 */
 OperationStack* createOperationStack();
 ReturnCode pushOperation(OperationStack *stack, Operation *operation);
+Operation* getOperation(OperationStack *stack);
 Operation* popOperation(OperationStack *stack);
 int getOperationStackSize(OperationStack *stack);
 ReturnCode freeOperationStack(OperationStack *stack);

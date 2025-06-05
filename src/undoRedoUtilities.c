@@ -237,6 +237,15 @@ ReturnCode pushOperation(OperationStack *stack, Operation *operation) {
     return 1; // Success
 }
 
+Operation* getOperation(OperationStack *stack) {
+    if (stack == NULL || stack->top == NULL) {
+        ERR_PRINT("Cannot get operation from an empty or NULL stack.\n");
+        return NULL;
+    }
+    
+    return stack->top->operation; // Return the operation at the top of the stack without removing it
+}
+
 Operation* popOperation(OperationStack *stack) {
     if (stack == NULL || stack->top == NULL) {
         ERR_PRINT("Cannot pop operation from an empty or NULL stack.\n");

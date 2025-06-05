@@ -868,6 +868,28 @@ SearchResult find(Sequence *sequence, wchar_t *textToFind, Position startPositio
   return result; // No match found
 }  
 
+SearchResult findAndReplace(Sequence *sequence, wchar_t *textToFind, wchar_t *textToReplace, Position startPosition) {
+  SearchResult result = find(sequence, textToFind, startPosition);
+
+  if (result.foundPosition != -1) { // Match found
+    DEBG_PRINT("Found match at position %d, replacing with '%ls'.\n", result.foundPosition, textToReplace);
+    ReturnCode deleteResult = deleteUndoOption(sequence, result.foundPosition, result.foundPosition + getUtf8ByteSize(textToFind) - 1, NULL);
+
+    if (deleteResult == 1) {
+      Operation *previousOperation = getOperation(sequence->undoStack);
+      ReturnCode insertResult = insertUndoOption(sequence, result.foundPosition, textToReplace, previousOperation);
+      if (insertResult == 1) {
+        return result; // Return the search result with the found position and line number
+      } else {
+        ERR_PRINT("Replace: Insert after delete failed.\n");
+        undo(sequence); // Undo the delete operation if insert fails
+      }
+    } else {
+      ERR_PRINT("Replace: Delete before insert failed.\n");
+    }
+  }
+}
+
 /*
 =========================
   Query internals
