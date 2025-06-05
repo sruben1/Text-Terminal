@@ -395,7 +395,7 @@ void init_buttons() {
     buttons[2].pressed = false;
 }
 
-// Draw all buttons
+// Draw buttons
 void draw_buttons() {
     if (lastGuiHeight < MENU_HEIGHT) return;
     
@@ -430,21 +430,20 @@ void handle_button_press(int button_index) {
         case 0: // Save button
             DEBG_PRINT("Save button pressed\n");
             // TODO: Implement save functionality
-            // You'll need to add file saving logic here
             mvprintw(lastGuiHeight - 1, buttons[2].x + buttons[2].width + 10, "File saved!");
             refresh();
             break;
             
         case 1: // Search button
             DEBG_PRINT("Search button pressed\n");
-            currMenuState = FIND; // Use your existing search state
+            currMenuState = FIND; 
             menuCursor = 0;
             refreshFlag = true;
             break;
             
         case 2: // S&R (Search & Replace) button
             DEBG_PRINT("S&R button pressed\n");
-            currMenuState = F_AND_R1; // Use your existing find & replace state
+            currMenuState = F_AND_R1; 
             menuCursor = 0;
             refreshFlag = true;
             break;
