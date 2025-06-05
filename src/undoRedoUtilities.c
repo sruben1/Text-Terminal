@@ -19,12 +19,10 @@ typedef struct OperationStack {
 */
 
 /**
- * An operation is identified by the first and last nodes
- * that span the range of nodes which are affected by the operation.
- * It also stores the sequence's statistics before the operation.
- * If multiple operations should only be undone together, they can be bundled
- * by linking them together via the `previous` pointer.
- * The memory for the operation is freed after use.
+ * Helper function to undo an operation.
+ * This function should handle the logic of restoring the piece table.
+ * Due to symmetry, it can be used for both undoing and redoing operations.
+ * Returns the inverse operation that can be used to redo the operation or NULL if an error occurs.
  */
 Operation* undoOperation(Sequence *sequence, Operation *operation, Operation *nextInverse) {
     // Get the nodes at the start and end of the operation
