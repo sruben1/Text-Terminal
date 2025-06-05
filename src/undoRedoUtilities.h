@@ -3,16 +3,22 @@
 
 #include "textStructure.h"
 
+typedef struct Operation Operation;
+
 /**
  * An operation is identified by the first and last nodes
  * that span the range of nodes which are affected by the operation.
  * It also stores the sequence's statistics before the operation.
+ * If multiple operations should only be undone together, they can be bundled
+ * by linking them together via the `previous` pointer.
  */
-typedef struct {
+struct Operation {
     DescriptorNode *first;
     DescriptorNode *oldNext; // The old next node of the first node
     DescriptorNode *last;
     DescriptorNode *oldPrev; // The old previous node of the last node
+
+    Operation *previous; // Pointer to the operation to undo after this one, NULL if this is the last operation
 
     int wordCount; // Word count before the operation
     int lineCount; // Line count before the operation
@@ -21,7 +27,7 @@ typedef struct {
     // In this case first stores the node to extend and the other nodes are NULL.
     int optimizedCase; // 1 if this is an optimized case, 0 otherwise
     unsigned long optimizedCaseSize; // Byte size of the inserted data (negative to revert)
-} Operation;
+};
 
 typedef struct OperationStack OperationStack;
 

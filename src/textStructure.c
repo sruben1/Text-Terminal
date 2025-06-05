@@ -36,6 +36,8 @@ size_t getUtf8ByteSize(const wchar_t* wstr);
 ReturnCode writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert, int *sizeOfCharOrNull);
 int textMatchesBuffer(Sequence *sequence, DescriptorNode *node, int offset, Atomic *needle, size_t needleSize);
 int getLineNumber(Sequence *sequence, Position position);
+ReturnCode insertUndoOption(Sequence *sequence, Position position, wchar_t *textToInsert, Operation *previousOperation);
+ReturnCode deleteUndoOption(Sequence *sequence, Position beginPosition, Position endPosition, Operation *previousOperation);
 
 /*
 =========================
@@ -440,7 +442,14 @@ int getCurrentLineCount(Sequence *sequence) {
 =========================
 */
 
-ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert ){
+ReturnCode insert(Sequence *sequence, Position position, wchar_t *textToInsert) {
+  return insertUndoOption(sequence, position, textToInsert, NULL);
+}
+
+/**
+ * Insertion with the option to link to a previous operation for bundled undo.
+ */
+ReturnCode insertUndoOption(Sequence *sequence, Position position, wchar_t *textToInsert, Operation *previousOperation) {
   DEBG_PRINT("[Trace]: Inserting at atomic:%d\n",position);
   if (sequence == NULL || textToInsert == NULL || position < 0){
     return -1; // Error
@@ -497,6 +506,7 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
       operation->optimizedCaseSize = byteSize;
       operation->wordCount = prevWordCount;
       operation->lineCount = prevLineCount;
+      operation->previous = previousOperation; // Link to the previous operation if any
       operation->oldNext = NULL; // Not used in optimized case
       operation->last = NULL;
       operation->oldPrev = NULL; 
@@ -565,6 +575,7 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
     operation->oldPrev = prev;
     operation->wordCount = prevWordCount;
     operation->lineCount = prevLineCount;
+    operation->previous = previousOperation; // Link to the previous operation if any
     operation->optimizedCase = 0; // Not an optimized case
     operation->optimizedCaseSize = 0; // Not used in this case
     if (pushOperation(sequence->undoStack, operation) == 0) {
@@ -624,6 +635,7 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
     operation->oldPrev = foundNode;
     operation->wordCount = prevWordCount;
     operation->lineCount = prevLineCount;
+    operation->previous = previousOperation; // Link to the previous operation if any
     operation->optimizedCase = 0; // Not an optimized case
     operation->optimizedCaseSize = 0; // Not used in this case
     if (pushOperation(sequence->undoStack, operation) == 0) {
@@ -666,7 +678,14 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
   return 1;
 }
 
-ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosition ){
+ReturnCode delete(Sequence *sequence, Position beginPosition, Position endPosition) {
+  return deleteUndoOption(sequence, beginPosition, endPosition, NULL);
+}
+
+/**
+ * Delete with the option to link to a previous operation for bundled undo.
+ */
+ReturnCode deleteUndoOption(Sequence *sequence, Position beginPosition, Position endPosition, Operation *previousOperation) {
   if (sequence == NULL || beginPosition < 0 || endPosition < beginPosition) {
     return -1; // Error
     ERR_PRINT("Delete failed at security check.\n");
@@ -711,6 +730,7 @@ ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosit
   operation->oldPrev = endNode;
   operation->wordCount = sequence->wordCount;
   operation->lineCount = sequence->lineCount;
+  operation->previous = previousOperation; // Link to the previous operation if any
   operation->optimizedCase = 0; // Not an optimized case
   operation->optimizedCaseSize = 0; // Not used in this case
   if (pushOperation(sequence->undoStack, operation) == 0) {
