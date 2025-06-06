@@ -422,7 +422,7 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
 
 /*
 =========================
-Query internals
+  Query internals
 =========================
 */
 
@@ -434,15 +434,43 @@ int getCurrentLineCount(Sequence *sequence) {
   return sequence != NULL ? sequence->lineCount : -1; // Return -1 if sequence is NULL
 }
 
-/**
- * Return Atomic position starting form position 1
- */
-int backTrackToFirstAtomicInLine(Atomic fromAtomic){
-  // Trivial cases:
-  if(fromAtomic <= 0 || fromAtomic-1 == 0){
-    return 0;
+Position backtrackToFirstAtomicInLine(Sequence *sequence, Position position) {
+  if (position < 0) {
+    return -1; // Error: Invalid position
+  } else if (position == 0 && sequence->pieceTable.first->next_ptr != sequence->pieceTable.last) {
+    return 0; // Postion is already at the start of the (non-empty) sequence
   }
-  // TODO once merged with latest changes!
+
+  NodeResult nodeResult = getNodeForPosition(sequence, position - 1);
+  DescriptorNode* currNode = nodeResult.node;
+  int offsetInNode = position - 1 - nodeResult.startPosition;
+
+  if (currNode == NULL || currNode == sequence->pieceTable.last
+      || (currNode->next_ptr == sequence->pieceTable.last && offsetInNode == currNode->size - 1)) {
+    return -1; // Error: Position out of bounds
+  }
+
+  Position currentPosition = position; // This is always one before the current offsetInNode
+  Atomic *buffer = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+  LineBidentifier lineBreakId = getCurrentLineBidentifier();
+  
+  while (currNode != sequence->pieceTable.first) {
+    // Iterate over the characters in the current node backwards
+    while (offsetInNode >= 0) {
+      if (buffer[currNode->offset + offsetInNode] == lineBreakId) {
+        return currentPosition; // Found the start of the line
+      }
+      offsetInNode--;
+      currentPosition--;
+    }
+
+    // Move to the previous node
+    currNode = currNode->prev_ptr;
+    offsetInNode = currNode->size - 1;
+    buffer = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+  }
+
+  return 0; // If we reach this, we are at the first node, so return 0
 }
 
 /*

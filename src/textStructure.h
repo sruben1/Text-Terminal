@@ -148,7 +148,13 @@ Size getItemBlock(Sequence *sequence, Position position, Atomic **returnedItemBl
 
 int getCurrentWordCount(Sequence *sequence);
 int getCurrentLineCount(Sequence *sequence);
-int backTrackToFirstAtomicInLine(Atomic fromAtomic);
+
+/**
+ * Returns the position of the first atomic in the line that contains the specified position.
+ * The previous line break is not considered part of the line, i.e. the returned position comes right after the line break.
+ * If it is the first line, the position will be 0.
+ */
+Position backtrackToFirstAtomicInLine(Sequence *sequence, Position position);
 
 /*
 =========================
