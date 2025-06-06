@@ -21,6 +21,21 @@
 
 #define MENU_HEIGHT 2 //lines of menu
 
+#define BUTTON_HEIGHT 1
+#define BUTTON_SAVE_WIDTH 6
+#define BUTTON_SEARCH_WIDTH 8  
+#define BUTTON_SR_WIDTH 5
+#define BUTTON_SPACING 2
+
+#define FIELD_WIDTH 14
+#define FIELD_PROMPT_WIDTH 8 
+
+typedef struct {
+    int x, y, width;
+    char* label;
+    bool pressed;
+} Button;
+Button buttons[3];
 /*
 =========================
   Text sequence data structure
@@ -44,8 +59,8 @@ enum _MenuState { NOT_IN_MENU, FIND, FIND_CYCLE, F_AND_R1, F_AND_R2, F_AND_R_CYC
 static enum _MenuState currMenuState = NOT_IN_MENU;
 static int menuCursor = 0;
 #define MAX_MENU_INPUT 15
-static wchar_t firstMenuInput[MAX_MENU_INPUT] = L"";
-static wchar_t secondMenuInput[MAX_MENU_INPUT] = L"";
+static wchar_t firstMenuInput[MAX_MENU_INPUT] = L"";// access first menue
+static wchar_t secondMenuInput[MAX_MENU_INPUT] = L"";//access second menue
 
 /*======== forward declarations ========*/
 void init_editor(void);
@@ -351,11 +366,283 @@ void init_editor(void) {
         fprintf(stderr, "Error: terminal too small (need at least 3x10)\n");
         exit(EXIT_FAILURE);
     }
-    
+    init_buttons();
+
     // Initialize line statistics for first (initial) iteration
     updateLine(0, 0, 0);
     refreshFlag = true;
 }
+
+void init_buttons() {
+    int start_x = 2; // Start buttons 2 characters from left edge
+    
+    // Save button
+    buttons[0].x = start_x;
+    buttons[0].y = lastGuiHeight - 1;
+    buttons[0].width = BUTTON_SAVE_WIDTH;
+    buttons[0].label = "Save";
+    buttons[0].pressed = false;
+    
+    // Search button  
+    buttons[1].x = start_x + BUTTON_SAVE_WIDTH + BUTTON_SPACING;
+    buttons[1].y = lastGuiHeight - 1;
+    buttons[1].width = BUTTON_SEARCH_WIDTH;
+    buttons[1].label = "Search";
+    buttons[1].pressed = false;
+    
+    // S&R button
+    buttons[2].x = start_x + BUTTON_SAVE_WIDTH + BUTTON_SPACING + BUTTON_SEARCH_WIDTH + BUTTON_SPACING;
+    buttons[2].y = lastGuiHeight - 1;
+    buttons[2].width = BUTTON_SR_WIDTH;
+    buttons[2].label = "S&R";
+    buttons[2].pressed = false;
+}
+
+// Draw buttons
+void draw_buttons() {
+    if (lastGuiHeight < MENU_HEIGHT) return;
+    
+    for (int i = 0; i < 3; i++) {
+        // Set button appearance based on pressed state
+        if (buttons[i].pressed) {
+            attron(A_REVERSE); // Inverted colors for pressed state
+        }
+        
+        // Draw button background
+        mvprintw(buttons[i].y, buttons[i].x, "[%s]", buttons[i].label);
+        
+        if (buttons[i].pressed) {
+            attroff(A_REVERSE);
+        }
+    }
+}
+
+void handle_button_press(int button_index) {
+    switch (button_index) {
+        case 0: // Save button
+            DEBG_PRINT("Save button pressed\n");
+            // TODO: Implement save functionality
+            // You'll need to add file saving logic here
+            if (lastGuiHeight >= MENU_HEIGHT) {
+                mvprintw(lastGuiHeight - 1, buttons[2].x + buttons[2].width + 10, "File saved!");
+                refresh();
+            }
+            break;
+            
+        case 1: // Search button
+            DEBG_PRINT("Search button pressed\n");
+            currMenuState = FIND;
+            menuCursor = 0;
+            // Clear the search input
+            wmemset(firstMenuInput, L'\0', MAX_MENU_INPUT);
+            refreshFlag = true;
+            break;
+            
+        case 2: // S&R (Search & Replace) button
+            DEBG_PRINT("S&R button pressed\n");
+            currMenuState = F_AND_R1;
+            menuCursor = 0;
+            // Clear both inputs
+            wmemset(firstMenuInput, L'\0', MAX_MENU_INPUT);
+            wmemset(secondMenuInput, L'\0', MAX_MENU_INPUT);
+            refreshFlag = true;
+            break;
+    }
+}
+
+void draw_text_input_field(int y, int x, int width, const wchar_t* prompt, const wchar_t* input, int cursor_pos, bool active) {
+    // Clear the area
+    mvprintw(y, x, "%*s", width + FIELD_PROMPT_WIDTH + 3, "");
+    
+    // Draw prompt
+    mvprintw(y, x, "%ls: ", prompt);
+    int prompt_len = wcslen(prompt) + 2; 
+    
+    // Draw input box brackets
+    mvprintw(y, x + prompt_len, "[");
+    mvprintw(y, x + prompt_len + width + 1, "]");
+    
+    // Draw input text
+    if (wcslen(input) > 0) {
+        // Convert wide string to multibyte for printing
+        size_t input_len = wcslen(input);
+        char* mb_input = malloc((input_len * 4 + 1) * sizeof(char));
+        if (mb_input) {
+            size_t converted = wcstombs(mb_input, input, input_len * 4);
+            if (converted != (size_t)-1) {
+                mb_input[converted] = '\0';
+                // Limit display to field width
+                int display_len = (strlen(mb_input) > width) ? width : strlen(mb_input);
+                mvprintw(y, x + prompt_len + 1, "%.*s", display_len, mb_input);
+            }
+            free(mb_input);
+        }
+    }
+    
+    // Position cursor if this field is active
+    if (active) {
+        int cursor_screen_pos = cursor_pos;
+        if (cursor_screen_pos > width) cursor_screen_pos = width;
+        move(y, x + prompt_len + 1 + cursor_screen_pos);
+    }
+}
+
+void draw_menu_interface() {
+    if (currMenuState == NOT_IN_MENU) return;
+    
+    int menu_y = lastGuiHeight - 1;  // Same line as buttons
+    int field_start_x = buttons[2].x + buttons[2].width + 10;  // After S&R button
+    
+    switch (currMenuState) {
+        case FIND:
+        case FIND_CYCLE:
+            // Clear area after buttons
+            mvprintw(menu_y, field_start_x, "%*s", lastGuiWidth - field_start_x, "");
+            draw_text_input_field(menu_y, field_start_x, FIELD_WIDTH, L"Search", firstMenuInput, menuCursor, true);
+            // Optional: Add instruction text if there's space
+            int instr_x = field_start_x + FIELD_WIDTH + FIELD_PROMPT_WIDTH + 5;
+            if (instr_x < lastGuiWidth - 20) {
+                mvprintw(menu_y, instr_x, "Enter to search, Esc to cancel");
+            }
+            break;
+            
+        case F_AND_R1:
+            // Clear area after buttons
+            mvprintw(menu_y, field_start_x, "%*s", lastGuiWidth - field_start_x, "");
+            draw_text_input_field(menu_y, field_start_x, FIELD_WIDTH, L"Find", firstMenuInput, menuCursor, true);
+            int instr_x1 = field_start_x + FIELD_WIDTH + FIELD_PROMPT_WIDTH + 5;
+            if (instr_x1 < lastGuiWidth - 15) {
+                mvprintw(menu_y, instr_x1, "Enter to continue");
+            }
+            break;
+            
+        case F_AND_R2:
+        case F_AND_R_CYCLE:
+            // Use two lines for find and replace
+            mvprintw(menu_y - 1, field_start_x, "%*s", lastGuiWidth - field_start_x, "");
+            mvprintw(menu_y, field_start_x, "%*s", lastGuiWidth - field_start_x, "");
+            
+            // Draw both input fields
+            draw_text_input_field(menu_y - 1, field_start_x, FIELD_WIDTH, L"Find", firstMenuInput, 0, false);
+            draw_text_input_field(menu_y, field_start_x, FIELD_WIDTH, L"Replace", secondMenuInput, menuCursor, true);
+            
+            int instr_x2 = field_start_x + FIELD_WIDTH + FIELD_PROMPT_WIDTH + 5;
+            if (instr_x2 < lastGuiWidth - 25) {
+                mvprintw(menu_y, instr_x2, "Enter to replace, Esc to cancel");
+            }
+            break;
+    }
+}
+
+int check_button_click(int mouse_x, int mouse_y) {
+    for (int i = 0; i < 3; i++) {
+        if (mouse_y == buttons[i].y && 
+            mouse_x >= buttons[i].x && 
+            mouse_x <= buttons[i].x + buttons[i].width + 1) { // +1 for brackets
+            return i;
+        }
+    }
+    return -1;
+}
+
+
+void handle_menu_input(wint_t wch, int status) {
+    if (currMenuState == NOT_IN_MENU) return;
+    
+    if (status == KEY_CODE_YES) {
+        switch (wch) {
+            case KEY_LEFT:
+                if (menuCursor > 0) {
+                    menuCursor--;
+                    refreshFlag = true;
+                }
+                break;
+                
+            case KEY_RIGHT:
+                if (currMenuState == FIND || currMenuState == F_AND_R1) {
+                    if (menuCursor < (int)wcslen(firstMenuInput)) {
+                        menuCursor++;
+                        refreshFlag = true;
+                    }
+                } else if (currMenuState == F_AND_R2) {
+                    if (menuCursor < (int)wcslen(secondMenuInput)) {
+                        menuCursor++;
+                        refreshFlag = true;
+                    }
+                }
+                break;
+                
+            case KEY_BACKSPACE:
+            case 8:
+            case 127:  // Also handle DEL key as backspace in menu
+                if (menuCursor > 0) {
+                    if (currMenuState == FIND || currMenuState == F_AND_R1) {
+                        // Remove character from firstMenuInput
+                        wmemmove(&firstMenuInput[menuCursor-1], &firstMenuInput[menuCursor], 
+                                wcslen(firstMenuInput) - menuCursor + 1);
+                    } else if (currMenuState == F_AND_R2) {
+                        // Remove character from secondMenuInput
+                        wmemmove(&secondMenuInput[menuCursor-1], &secondMenuInput[menuCursor], 
+                                wcslen(secondMenuInput) - menuCursor + 1);
+                    }
+                    menuCursor--;
+                    refreshFlag = true;
+                }
+                break;
+        }
+    } else if (status == OK) {
+        switch (wch) {
+            case 27: // Escape key
+                currMenuState = NOT_IN_MENU;
+                refreshFlag = true;
+                break;
+                
+            case KEY_ENTER:
+            case 10:
+            case 13:
+                if (currMenuState == FIND) {
+                    // TODO: Implement search functionality using firstMenuInput
+                    DEBG_PRINT("Searching for: %ls\n", firstMenuInput);
+                    currMenuState = NOT_IN_MENU;
+                    refreshFlag = true;
+                } else if (currMenuState == F_AND_R1) {
+                    currMenuState = F_AND_R2;
+                    menuCursor = 0;
+                    refreshFlag = true;
+                } else if (currMenuState == F_AND_R2) {
+                    // TODO: Implement find and replace functionality
+                    DEBG_PRINT("Find: %ls, Replace: %ls\n", firstMenuInput, secondMenuInput);
+                    currMenuState = NOT_IN_MENU;
+                    refreshFlag = true;
+                }
+                break;
+                
+            default:
+                // Handle regular character input
+                if (is_printable_unicode(wch)) {
+                    wchar_t* target_input = NULL;
+                    int max_len = MAX_MENU_INPUT - 1;
+                    
+                    if (currMenuState == FIND || currMenuState == F_AND_R1) {
+                        target_input = firstMenuInput;
+                    } else if (currMenuState == F_AND_R2) {
+                        target_input = secondMenuInput;
+                    }
+                    
+                    if (target_input && (int)wcslen(target_input) < max_len) {
+                        // Insert character at cursor position
+                        wmemmove(&target_input[menuCursor+1], &target_input[menuCursor], 
+                                wcslen(target_input) - menuCursor + 1);
+                        target_input[menuCursor] = (wchar_t)wch;
+                        menuCursor++;
+                        refreshFlag = true;
+                    }
+                }
+                break;
+        }
+    }
+}
+
 //paste
 ReturnCode pasteFromClipboard(Sequence* sequence, int cursorY, int cursorX) {
     if (sequence == NULL) {
@@ -387,8 +674,8 @@ ReturnCode pasteFromClipboard(Sequence* sequence, int cursorY, int cursorX) {
     mbstowcs(wideText, clipboardText, wcharCount + 1);
     free(clipboardText);
     
-    // Insert the text at cursor position
-    Position insertPos = getAbsoluteAtomicIndex(cursorY, cursorX, sequence);
+    // Insert the text at cursor position using getAbsoluteAtomicIndex
+    int insertPos = getAbsoluteAtomicIndex(cursorY, cursorX, sequence);
     if (insertPos < 0) {
         ERR_PRINT("Failed to calculate insertion position\n");
         free(wideText);
@@ -428,7 +715,7 @@ char* getFromXclip(void) {
         execl("/usr/bin/xclip", "xclip", "-selection", "clipboard", "-o", NULL);
         _exit(1); 
     } else {
-        // Parent - read  pipe
+        // Parent - read pipe
         close(pipefd[1]); 
         
         char* buffer = malloc(4096);
@@ -475,22 +762,33 @@ char* getFromXclip(void) {
         return buffer;
     }
 }
-
-ReturnCode copyToClipboard(Sequence* sequence, int startY, int startX, int endY, int endX) {
+ int copyYoffset = 0;
+int copyXoffset = 0;
+ReturnCode copySelectionToClipboard(Sequence* sequence) {
     if (sequence == NULL) {
         ERR_PRINT("Invalid sequence for copy operation\n");
         return -1;
     }
     
-    Position startPos = getAbsoluteAtomicIndex(startY, startX, sequence);
-    Position endPos = getAbsoluteAtomicIndex(endY, endX, sequence);
+    // Get current selection range using the function from first file
+    int startX, endX, startY, endY;
+    getCurrentSelectionRang(&startX, &endX, &startY, &endY);
+    
+    copyYoffset = endY-startY;
+    copyXoffset = endX-startX;
+
+    // Use getAbsoluteAtomicIndex to get positions
+    int startPos = getAbsoluteAtomicIndex(startY, startX, sequence);
+    int endPos = getAbsoluteAtomicIndex(endY, endX, sequence)-1;
     
     if (startPos < 0 || endPos < 0) {
         ERR_PRINT("Failed to calculate absolute positions for copy\n");
         return -1;
     }
-        if (startPos > endPos) {
-        Position temp = startPos;
+    
+    // Ensure proper order
+    if (startPos > endPos) {
+        int temp = startPos;
         startPos = endPos;
         endPos = temp;
     }
@@ -526,31 +824,75 @@ ReturnCode copyToClipboard(Sequence* sequence, int startY, int startX, int endY,
 }
 
 /**
- * Copy entire current line to clipboard
+ * Send text to xclip for clipboard storage
  */
-ReturnCode copyCurrentLine(Sequence* sequence, int currentY) {
-    if (sequence == NULL || currentY < 0) {
-        ERR_PRINT("Invalid parameters for copy current line\n");
+ReturnCode sendToXclip(const char* text) {
+    if (text == NULL) {
+        ERR_PRINT("No text provided to sendToXclip\n");
         return -1;
     }
     
-    int lineLength = getUtfNoControlCharCount(currentY);
-    return copyToClipboard(sequence, currentY, 0, currentY, lineLength);
+    int pipefd[2];
+    if (pipe(pipefd) == -1) {
+        ERR_PRINT("Failed to create pipe for xclip write\n");
+        return -1;
+    }
+    
+    pid_t pid = fork();
+    if (pid == -1) {
+        ERR_PRINT("Failed to fork for xclip write\n");
+        close(pipefd[0]);
+        close(pipefd[1]);
+        return -1;
+    }
+    
+    if (pid == 0) {
+        // Child - run xclip
+        close(pipefd[1]);
+        dup2(pipefd[0], STDIN_FILENO);
+        close(pipefd[0]);
+        
+        execl("/usr/bin/xclip", "xclip", "-selection", "clipboard", "-i", NULL);
+        _exit(1);
+    } else {
+        // Parent - write to pipe
+        close(pipefd[0]);
+        
+        size_t textLen = strlen(text);
+        ssize_t written = write(pipefd[1], text, textLen);
+        close(pipefd[1]);
+        
+        if (written != (ssize_t)textLen) {
+            ERR_PRINT("Failed to write complete text to xclip\n");
+            waitpid(pid, NULL, 0);
+            return -1;
+        }
+        
+        int status;
+        waitpid(pid, &status, 0);
+        
+        if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+            ERR_PRINT("xclip copy operation failed\n");
+            return -1;
+        }
+        
+        return 1;
+    }
 }
 
 /**
  * Extract text between abs positions
  * Returns allocated wchar_t string must be freed
  */
-wchar_t* extractTextRange(Sequence* sequence, Position startPos, Position endPos) {
+wchar_t* extractTextRange(Sequence* sequence, int startPos, int endPos) {
     if (sequence == NULL || startPos < 0 || endPos < startPos) {
         return NULL;
     }
     
     // Calculate total length needed
-    Position totalLength = endPos - startPos + 1;
+    int totalLength = endPos - startPos + 1;
     int utf8CharCount = 0;
-    Position currentPos = startPos;
+    int currentPos = startPos;
     
     // Count UTF-8 characters in range
     while (currentPos <= endPos) {
@@ -576,7 +918,7 @@ wchar_t* extractTextRange(Sequence* sequence, Position startPos, Position endPos
         return NULL;
     }
     
-    // buffer for wide characters
+    // Allocate buffer for wide characters
     wchar_t* result = malloc((utf8CharCount + 1) * sizeof(wchar_t));
     if (result == NULL) {
         ERR_PRINT("Failed to allocate memory for text extraction\n");
@@ -585,7 +927,7 @@ wchar_t* extractTextRange(Sequence* sequence, Position startPos, Position endPos
     
     // Extract actual text
     currentPos = startPos;
-    Position resultPos = 0;
+    int resultPos = 0;
     
     while (currentPos <= endPos && resultPos < utf8CharCount) {
         Atomic* block = NULL;
@@ -624,56 +966,6 @@ wchar_t* extractTextRange(Sequence* sequence, Position startPos, Position endPos
 }
 
 
-/**
- * Send UTF-8 text to xclip
- */
-ReturnCode sendToXclip(const char* text) {
-    if (text == NULL) {
-        return -1;
-    }
-    
-    int pipefd[2];
-    if (pipe(pipefd) == -1) {
-        ERR_PRINT("Failed to create pipe for xclip\n");
-        return -1;
-    }
-    
-    pid_t pid = fork();
-    if (pid == -1) {
-        ERR_PRINT("Failed to fork for xclip\n");
-        close(pipefd[0]);
-        close(pipefd[1]);
-        return -1;
-    }
-    
-    if (pid == 0) {
-        // Child - run xclip
-        close(pipefd[1]); 
-        dup2(pipefd[0], STDIN_FILENO);
-        close(pipefd[0]);
-        
-        execl("/usr/bin/xclip", "xclip", "-selection", "clipboard", NULL);
-        _exit(1);
-    } else {
-        // Parent - write text to pipe
-        close(pipefd[0]); // Close read end
-        
-        size_t textLen = strlen(text);
-        ssize_t written = write(pipefd[1], text, textLen);
-        close(pipefd[1]);
-        
-        int status;
-        waitpid(pid, &status, 0);
-        
-        if (written != (ssize_t)textLen || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-            ERR_PRINT("xclip copy operation failed\n");
-            return -1;
-        }
-    }
-    
-    return 1;
-}
-
 void close_editor(void) {
     closeDebuggerFiles;
     endwin();
@@ -693,6 +985,9 @@ void checkSizeChanged(void){
         lastGuiHeight = new_y;
         lastGuiWidth = new_x;
         
+        init_buttons();
+
+
         // Validate cursor position after resize
         if (cursorY >= lastGuiHeight - MENU_HEIGHT) {
             cursorY = lastGuiHeight - MENU_HEIGHT - 1;
@@ -712,92 +1007,115 @@ void process_input(void) {
     int status;
 
     status = get_wch(&wch);
-    
+    if (currMenuState != NOT_IN_MENU) {
+        handle_menu_input(wch, status);
+        return;  // Don't process other input while in menu mode
+    }
     // Handle Ctrl+l properly
     if (status == OK && wch == CTRL_KEY('l')) {// changed to 'l' since issue with VS code not allowing ctrl + q inputs.
         close_editor();
         exit(0);
     }
     // ctrl+p for paste 
-    if (status == OK && wch == CTRL_KEY('p')) {
+     if (status == OK && wch == CTRL_KEY('p')) {
         DEBG_PRINT("Processing Ctrl+P (paste)\n");
+        
+        int originalCursorX = cursorX;
+        int originalCursorY = cursorY;
+        
         if (pasteFromClipboard(activeSequence, cursorY, cursorX) > 0) {
             DEBG_PRINT("Paste successful\n");
+            
+            if (copyYoffset == 0) {//single line
+                cursorX += copyXoffset;
+            } else {// Multi-line 
+                
+                cursorY += copyYoffset;
+                cursorX = copyXoffset;
+            }
+            
+            // Validate cursor bounds
+            if (cursorX < 0) cursorX = 0;
+            if (cursorY < 0) cursorY = 0;
+            if (cursorY >= lastGuiHeight - MENU_HEIGHT) {
+                cursorY = lastGuiHeight - MENU_HEIGHT - 1;
+            }
+            if (cursorX >= lastGuiWidth) {
+                cursorX = lastGuiWidth - 1;
+            }
+            
+            resetRangeSelectionState();
             refreshFlag = true;
             setLineStatsNotUpdated();
             
             if (lastGuiHeight >= MENU_HEIGHT) {
-                mvprintw(lastGuiHeight - 1, 0, "Text pasted   Ctrl-l to quit");
+                mvprintw(lastGuiHeight - 2, 0, "Text pasted   Ctrl-l to quit");
                 refresh();
             }
         } else {
             ERR_PRINT("Failed to paste from clipboard\n");
             if (lastGuiHeight >= MENU_HEIGHT) {
-                mvprintw(lastGuiHeight - 1, 0, "Paste failed   Ctrl-l to quit");
+                mvprintw(lastGuiHeight - 2, 0, "Paste failed   Ctrl-l to quit");
                 refresh();
             }
         }
     }
 
-    // Ctrl+Y - Copy current line 
-    if (status == OK && wch == CTRL_KEY('y')) {
-        DEBG_PRINT("Processing Ctrl+Y (copy line)\n");
-        if (copyCurrentLine(activeSequence, cursorY) > 0) {
-            DEBG_PRINT("Line copied successfully\n");
-            // Optional: Show status message
-            if (lastGuiHeight >= MENU_HEIGHT) {
-                mvprintw(lastGuiHeight - 1, 0, "Line copied   Ctrl-l to quit");
-                refresh();
-                // Reset refresh flag so status shows briefly
-                refreshFlag = true;
-            }
-        } else {
-            ERR_PRINT("Failed to copy current line\n");
+    // ctrl+y for copy
+if (status == OK && wch == CTRL_KEY('y')) {
+    DEBG_PRINT("Processing Ctrl+Y (copy)\n");
+    if (copySelectionToClipboard(activeSequence) > 0) {
+        DEBG_PRINT("Copy successful\n");
+        
+        if (lastGuiHeight >= MENU_HEIGHT) {
+            mvprintw(lastGuiHeight - 2, 0, "Text copied   Ctrl-l to quit ");
+            refresh();
+        }
+    } else {
+        ERR_PRINT("Failed to copy to clipboard\n");
+        if (lastGuiHeight >= MENU_HEIGHT) {
+            mvprintw(lastGuiHeight - 2, 0, "Copy failed   Ctrl-l to quit ");
+            refresh();
         }
     }
-    /** 
-    // Ctrl+U - Copy selection (implement text selection later)
-    if (status == OK && wch == CTRL_KEY('u')) {
-        DEBG_PRINT("Processing Ctrl+U (copy selection)\n");
-        // For now, copy current line since no selection is implemented
-        if (copyCurrentLine(activeSequence, cursorY) > 0) {
-            DEBG_PRINT("Selection copied successfully\n");
-            if (lastGuiHeight >= MENU_HEIGHT) {
-                mvprintw(lastGuiHeight - 1, 0, "Selection copied   Ctrl-l to quit");
-                refresh();
-                refreshFlag = true;
-            }
-        } else {
-            ERR_PRINT("Failed to copy selection\n");
-        }
-    }
-    */
+}
+
     if (status == KEY_CODE_YES) {
         // Function key pressed
         int posStart = -1; // Used for delete and backspace
         int posEnd = -1; // Used for delete and backspace
         switch (wch){
-            case KEY_MOUSE: // All mouse handling here (menu buttons, mouse cursor interactions, etc.)
+            case KEY_MOUSE:
                 MEVENT event;
                 if (getmouse(&event) == OK) {
                     DEBG_PRINT("Handling MOUSE event.\n");
                     if (event.bstate & BUTTON1_CLICKED) {
-                        if (event.y < lastGuiHeight - MENU_HEIGHT){
+                        // Check if click is on a button first
+                        int button_clicked = check_button_click(event.x, event.y);
+                        if (button_clicked != -1) {
+                            // Button was clicked
+                            buttons[button_clicked].pressed = true;
+                            draw_buttons();
+                            refresh();
+                            
+                            // Small delay to show button press
+                            napms(100);
+                            
+                            buttons[button_clicked].pressed = false;
+                            handle_button_press(button_clicked);
+                            updateCursorAndMenu();
+                        }
+                        else if (event.y < lastGuiHeight - MENU_HEIGHT) {
+                            // Text area click
                             currMenuState = NOT_IN_MENU;
-                            // Text cursor case:
-                                relocateAndupdateCursorAndMenu(event.x, event.y);
-                        }  else{
-                            // Menu interactions case:
-
+                            relocateAndupdateCursorAndMenu(event.x, event.y);
                         }
                     } 
                     else if (event.bstate & BUTTON1_DOUBLE_CLICKED) {
-                        // Dragging end coordinates:
-                        DEBG_PRINT("Drag ended at: X:%d Y:%d",event.x, event.y);
+                        DEBG_PRINT("Drag ended at: X:%d Y:%d", event.x, event.y);
                         relocateRangeEndAndUpdate(event.x, event.y);
                     }
-                }  
-
+                }
                 break;
             /*---- Standard Cursor ----*/
             case KEY_UP:
@@ -1355,7 +1673,6 @@ void updateCursorAndMenu(){
         mvchgat(y, 0, -1, A_NORMAL, 0, NULL); // -1 signifies: till end of gui line
     }
 
-
     if(cursorNotInRangeSelectionState()){
         autoAdjustHorizontalScrolling(false);
         // Perform this to ensure correct ranges still ensured:
@@ -1363,17 +1680,25 @@ void updateCursorAndMenu(){
         int horizOffs = getCurrHorizontalScrollOffset();
 
         if (lastGuiHeight >= MENU_HEIGHT) {
-            mvprintw(lastGuiHeight - 1, 0, "Ln %d, Col %d   Ctrl-l to quit", cursorY + horizOffs + 1, cursorX + horizOffs + 1);
-            clrtoeol(); // Clear rest of status line
+            // Clear the status line first
+            move(lastGuiHeight - 1, 0);
+            clrtoeol();// Clear rest of status line
+            
+            // Draw buttons first
+            draw_buttons();
+            
+            // Then draw status text after the buttons
+            int status_x =  0;
+            mvprintw(lastGuiHeight - 2, status_x, "Ln %d, Col %d   Ctrl-l to quit", 
+                     cursorY + horizOffs + 1, cursorX + horizOffs + 1);
         }
-    } else{
-
+    } else {
         autoAdjustHorizontalScrolling(true);
 
         int startX = -1, startY = -1, endX = -1, endY = -1;
         getCurrentSelectionRang(&startX, &endX, &startY, &endY);
         if (startY == endY){
-            mvchgat(endY, startX, endX-startX, A_REVERSE, 0, NULL); // Format in inverted color scheme
+            mvchgat(endY, startX, endX-startX, A_REVERSE, 0, NULL);// Format in inverted color scheme
         } else{
             mvchgat(startY, startX, -1, A_REVERSE, 0, NULL);
             mvchgat(endY, 0, endX, A_REVERSE, 0, NULL);
@@ -1383,17 +1708,33 @@ void updateCursorAndMenu(){
         }
         
         if (lastGuiHeight >= MENU_HEIGHT) {
-            int horizOffs = getCurrHorizontalScrollOffset();
-            mvprintw(lastGuiHeight - 1, 0, "Ln %d-%d, Col %d-%d   Ctrl-l to quit", cursorY + horizOffs + 1, cursorEndY + horizOffs +1, cursorX + horizOffs + 1, cursorEndX + horizOffs +1);
-            clrtoeol(); // Clear rest of status line
+            move(lastGuiHeight - 1, 0);
+            clrtoeol();
+            
+            // Draw buttons
+            draw_buttons();
+            
+            // Draw selection status if not in menu
+            if (currMenuState == NOT_IN_MENU) {
+                int horizOffs = getCurrHorizontalScrollOffset();
+                int status_x = buttons[2].x + buttons[2].width + 10;
+                mvprintw(lastGuiHeight - 2, status_x, "Selection: Ln %d-%d, Col %d-%d ", 
+                         cursorY + horizOffs + 1, cursorEndY + horizOffs +1, 
+                         cursorX + horizOffs + 1, cursorEndX + horizOffs +1);
+            }
         }
-
     }
-    DEBG_PRINT("Ncurses cursor moved to screen pos X:%d, Y:%d\n", cursorEndX, cursorEndY);
-    move(cursorY, cursorX);
+    draw_menu_interface();
+
+    // Position cursor appropriately
+    if (currMenuState != NOT_IN_MENU) {
+        // Cursor positioning is handled in draw_menu_interface
+    } else {
+        DEBG_PRINT("Ncurses cursor moved to screen pos X:%d, Y:%d\n", cursorX, cursorY);
+        move(cursorY, cursorX);
+    }
     refresh();
 }
-
 /**
  * Function to know if currently in range selection mode. 
  * Use this every time range and normal selection modes need different handling.
