@@ -58,6 +58,12 @@ typedef struct {
   int lineNumber; // Line number of the found text
 } SearchResult;
 
+typedef struct {
+  int lastAtomicPos;
+  int lastCharSize;
+  long int lastWritePos;
+} LastInsert;
+
 /* Combined data structure */
 typedef struct {
   PieceTable pieceTable;
@@ -68,6 +74,7 @@ typedef struct {
   int wordCount;
   int lineCount;
   SearchResult lastLineResult; // Internal cache
+  LastInsert lastInsert; // Internal cache
 } Sequence;
 
 /*

@@ -22,11 +22,6 @@ static LineBidentifier _currLineBidentifier = NONE_ID;
 static int fdOfCurrentOpenFile = 0;
 static bool currentlySaved = true;
 static Atomic endOfTextSignal = END_OF_TEXT_CHAR;
-static struct _lastInsert {
-  int _lastAtomicPos;
-  int _lastCharSize;
-  long int _lastWritePos;
-} _lastInsert = {-1,-1, -1};
 
 /*------ Declarations ------ */
 NodeResult getNodeForPosition(Sequence *sequence, Position position);
@@ -72,6 +67,9 @@ Sequence* empty(){
   newSeq->lineCount = 0;
   newSeq->lastLineResult.foundPosition = -1;
   newSeq->lastLineResult.lineNumber = -1;
+  newSeq->lastInsert.lastAtomicPos = -1;
+  newSeq->lastInsert.lastCharSize = -1;
+  newSeq->lastInsert.lastWritePos = -1;
 
   // Create sentinel nodes for the piece table
   DescriptorNode* firstNode = (DescriptorNode*) malloc(sizeof(DescriptorNode));
@@ -467,6 +465,7 @@ ReturnCode insertUndoOption(Sequence *sequence, Position position, wchar_t *text
   // Make cache invalid if necessary
   if (position <= sequence->lastLineResult.foundPosition) {
     sequence->lastLineResult.foundPosition = -1; 
+    sequence->lastLineResult.lineNumber = -1;
   } 
 
   // Store previous statistics for undo
@@ -478,9 +477,10 @@ ReturnCode insertUndoOption(Sequence *sequence, Position position, wchar_t *text
     sequence->lineCount++;
   }
 
-  // Optimization case: if insert at last insert (and buffer) +1 position simply extend node to hold new insert as well.
-  DEBG_PRINT("cond1:%d , cond2: %d",(position == _lastInsert._lastAtomicPos + _lastInsert._lastCharSize), (newlyWrittenBufferOffset == _lastInsert._lastWritePos +  _lastInsert._lastCharSize));
-  if( (position == _lastInsert._lastAtomicPos + _lastInsert._lastCharSize) && (newlyWrittenBufferOffset == _lastInsert._lastWritePos +  _lastInsert._lastCharSize)){
+  // Optimization case: if insert at last insert (and buffer) +1 position, simply extend node to hold new insert as well.
+  LastInsert lastInsert = sequence->lastInsert;
+  if (position == lastInsert.lastAtomicPos + lastInsert.lastCharSize 
+    && newlyWrittenBufferOffset == lastInsert.lastWritePos +  lastInsert.lastCharSize){
     NodeResult toExtend = getNodeForPosition(sequence, position-1);
 
     // Ensure not operating in invalid node...
@@ -517,18 +517,12 @@ ReturnCode insertUndoOption(Sequence *sequence, Position position, wchar_t *text
       }
 
       // Save this insert's properties for comparison at next insert.
-      _lastInsert._lastAtomicPos = position;
-      _lastInsert._lastWritePos = newlyWrittenBufferOffset;
-      _lastInsert._lastCharSize = atomicSizeOfInsertion;
+      sequence->lastInsert.lastAtomicPos = position;
+      sequence->lastInsert.lastWritePos = newlyWrittenBufferOffset;
+      sequence->lastInsert.lastCharSize = atomicSizeOfInsertion;
       return 1;
     }
   }
-  // Save this insert's properties for comparison at next insert.
-  DEBG_PRINT("Insert saved with size!%d, buffOfs:%d, atomPos:%d.\n", atomicSizeOfInsertion, newlyWrittenBufferOffset, position);
-  _lastInsert._lastAtomicPos = position;
-  _lastInsert._lastWritePos = newlyWrittenBufferOffset;
-  _lastInsert._lastCharSize = atomicSizeOfInsertion;
-
 
   // Otherwise create a new node for the inserted text
   DescriptorNode* newInsert = (DescriptorNode*) malloc(sizeof(DescriptorNode));
@@ -675,6 +669,11 @@ ReturnCode insertUndoOption(Sequence *sequence, Position position, wchar_t *text
   sequence->wordCount += stats.totalWords;
   sequence->lineCount += stats.totalLineBreaks;
 
+  // Save this insert's properties for comparison at next insert.
+  sequence->lastInsert.lastAtomicPos = position;
+  sequence->lastInsert.lastWritePos = newlyWrittenBufferOffset;
+  sequence->lastInsert.lastCharSize = atomicSizeOfInsertion;
+
   return 1;
 }
 
@@ -713,7 +712,11 @@ ReturnCode deleteUndoOption(Sequence *sequence, Position beginPosition, Position
   // Make cache invalid if necessary
   if (beginPosition <= sequence->lastLineResult.foundPosition) {
     sequence->lastLineResult.foundPosition = -1; 
+    sequence->lastLineResult.lineNumber = -1;
   } 
+  sequence->lastInsert.lastAtomicPos = -1;
+  sequence->lastInsert.lastWritePos = -1;
+  sequence->lastInsert.lastCharSize = -1;
 
   // Get the statistics effect of the deletion
   TextStatistics stats = calculateStatsEffect(sequence, startNode, distanceInStartBlock, endNode, distanceInEndBlock, getCurrentLineBidentifier());
