@@ -151,8 +151,9 @@ ReturnCode closeSequence( Sequence *sequence, bool forceFlag ){
     //TODO : free file related resources!
     // munmap(fdOfCurrentOpenFile, sequence->fileBuffer.capacity);
     // close(fdOfCurrentOpenFile);
-       
-
+    
+    _currLineB = NO_INIT;
+    _currLineBidentifier = NONE_ID;
     free(sequence->fileBuffer.data);
     free(sequence->addBuffer.data);
     free(sequence);
@@ -346,6 +347,37 @@ int getCurrentWordCount(Sequence *sequence) {
 
 int getCurrentLineCount(Sequence *sequence) {
   return sequence != NULL ? sequence->lineCount : -1; // Return -1 if sequence is NULL
+}
+
+/**
+ * Return Atomic position starting form position 1
+ */
+int backTrackToFirstAtomicInLine(Sequence *sequence, Atomic fromAtomic){
+  // Trivial cases:
+  if(fromAtomic <= 0 || fromAtomic-1 == 0){
+    return 0;
+  }
+  
+}
+
+/**
+ * Query the total amount of atomics used in current sequence state, from both the add and the file buffer. 
+ */
+int getCurrentTotalSize(Sequence *sequence){
+  NodeResult result = {NULL, -1};
+
+  if (sequence == NULL){
+    return -1; // Error 
+  }
+
+  DescriptorNode* curr = sequence->pieceTable.first->next_ptr; // Skip sentinel node
+  int i = 0;
+  while(curr != sequence->pieceTable.last){
+    i += curr->size;
+    curr = curr->next_ptr;
+  }
+
+  return i;
 }
 
 /*
@@ -678,23 +710,6 @@ ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosit
   }
   
   return 1;
-}
-
-/*
-=========================
-  Query internals
-=========================
-*/
-
-/**
- * Return Atomic position starting form position 1
- */
-int backTrackToFirstAtomicInLine(Atomic fromAtomic){
-  // Trivial cases:
-  if(fromAtomic <= 0 || fromAtomic-1 == 0){
-    return 0;
-  }
-  // TODO once merged with latest changes!
 }
 
 /*

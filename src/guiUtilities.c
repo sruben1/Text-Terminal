@@ -93,7 +93,7 @@ ReturnCode updateLine(int relativeLineNumber, int absoluteGeneralAtomicPosition 
  *  requires full update of statistics afterwards since operation invalidates internal state,
  *  except for first relative screen line due to need of leap of faith. 
  */
-ReturnCode moveAbsoluteLineNumbers(int addOrSubstractOne){
+ReturnCode moveAbsoluteLineNumbers(int addOrSubstractOne, Sequence *seq){
     if (addOrSubstractOne > 0){
         if(getTotalAmountOfRelativeLines() > 1){
             if (lineStats.absolutePos[1] != -1){
@@ -112,7 +112,7 @@ ReturnCode moveAbsoluteLineNumbers(int addOrSubstractOne){
         }
     } else if (addOrSubstractOne < 0){
         if (lineStats.absolutePos[0] > 0){
-            _portTopIdxForNext = backTrackToFirstAtomicInLine(lineStats.absolutePos[0]);
+            _portTopIdxForNext = backTrackToFirstAtomicInLine(seq,lineStats.absolutePos[0]);
         } else{
             ERR_PRINT("Scroll up illegal!\n");
             return -1;

@@ -69,7 +69,7 @@ typedef struct {
 =========================
 */
 Sequence* empty(); /* Create an empty sequence (i.e. for new empty file)*/
-Sequence* loadOrCreateNewFile( char *pathname ); /* i.e. open a file */
+Sequence* loadOrCreateNewFile( char* filePath, LineBstd stdIfNewCreation); /* i.e. open a file */
 LineBstd getCurrentLineBstd(); 
 LineBidentifier getCurrentLineBidentifier(); /* returns '\n' for Linux & MSDOS or '\r' for MAC */
 
@@ -96,7 +96,8 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
 */
 int getCurrentWordCount( Sequence *sequence );
 int getCurrentLineCount( Sequence *sequence );
-int backTrackToFirstAtomicInLine(Atomic fromAtomic);
+int backTrackToFirstAtomicInLine(Sequence *sequence, Atomic fromAtomic);
+int getCurrentTotalSize(Sequence *sequence);
 
 /*
 =========================
