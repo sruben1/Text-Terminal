@@ -27,6 +27,9 @@
 #define BUTTON_SR_WIDTH 5
 #define BUTTON_SPACING 2
 
+#define FIELD_WIDTH 14
+#define FIELD_PROMPT_WIDTH 8 
+
 typedef struct {
     int x, y, width;
     char* label;
@@ -56,8 +59,8 @@ enum _MenuState { NOT_IN_MENU, FIND, FIND_CYCLE, F_AND_R1, F_AND_R2, F_AND_R_CYC
 static enum _MenuState currMenuState = NOT_IN_MENU;
 static int menuCursor = 0;
 #define MAX_MENU_INPUT 15
-static wchar_t firstMenuInput[MAX_MENU_INPUT] = L"";
-static wchar_t secondMenuInput[MAX_MENU_INPUT] = L"";
+static wchar_t firstMenuInput[MAX_MENU_INPUT] = L"";// access first menue
+static wchar_t secondMenuInput[MAX_MENU_INPUT] = L"";//access second menue
 
 /*======== forward declarations ========*/
 void init_editor(void);
@@ -448,66 +451,85 @@ void handle_button_press(int button_index) {
 }
 
 void draw_text_input_field(int y, int x, int width, const wchar_t* prompt, const wchar_t* input, int cursor_pos, bool active) {
-    mvprintw(y, x, "%*s", width, "");
+    // Clear the area
+    mvprintw(y, x, "%*s", width + FIELD_PROMPT_WIDTH + 3, "");
     
-    // prompt
+    // Draw prompt
     mvprintw(y, x, "%ls: ", prompt);
     int prompt_len = wcslen(prompt) + 2; 
     
-    // input box
+    // Draw input box brackets
     mvprintw(y, x + prompt_len, "[");
-    mvprintw(y, x + prompt_len + width - 1, "]");
+    mvprintw(y, x + prompt_len + width + 1, "]");
     
-    // input text
+    // Draw input text
     if (wcslen(input) > 0) {
         // Convert wide string to multibyte for printing
         size_t input_len = wcslen(input);
-        char* mb_input = malloc((input_len * 4 + 1) * sizeof(char)); // UTF-8 can be up to 4 bytes per char
+        char* mb_input = malloc((input_len * 4 + 1) * sizeof(char));
         if (mb_input) {
-            wcstombs(mb_input, input, input_len * 4);
-            mvprintw(y, x + prompt_len + 1, "%.*s", width - 3, mb_input);
+            size_t converted = wcstombs(mb_input, input, input_len * 4);
+            if (converted != (size_t)-1) {
+                mb_input[converted] = '\0';
+                // Limit display to field width
+                int display_len = (strlen(mb_input) > width) ? width : strlen(mb_input);
+                mvprintw(y, x + prompt_len + 1, "%.*s", display_len, mb_input);
+            }
             free(mb_input);
         }
     }
     
     // Position cursor if this field is active
     if (active) {
-        move(y, x + prompt_len + 1 + cursor_pos);
+        int cursor_screen_pos = cursor_pos;
+        if (cursor_screen_pos > width) cursor_screen_pos = width;
+        move(y, x + prompt_len + 1 + cursor_screen_pos);
     }
 }
 
 void draw_menu_interface() {
     if (currMenuState == NOT_IN_MENU) return;
     
-    int menu_y = lastGuiHeight - 2;
-    int field_width = 30;
+    int menu_y = lastGuiHeight - 1;  // Same line as buttons
+    int field_start_x = buttons[2].x + buttons[2].width + 10;  // After S&R button
     
     switch (currMenuState) {
         case FIND:
         case FIND_CYCLE:
-            // Clear the menu line
-            mvprintw(menu_y, 0, "%*s", lastGuiWidth, "");
-            draw_text_input_field(menu_y, 2, field_width, L"Search", firstMenuInput, menuCursor, true);
-            mvprintw(menu_y, field_width + 10, "Press Enter to search, Esc to cancel");
+            // Clear area after buttons
+            mvprintw(menu_y, field_start_x, "%*s", lastGuiWidth - field_start_x, "");
+            draw_text_input_field(menu_y, field_start_x, FIELD_WIDTH, L"Search", firstMenuInput, menuCursor, true);
+            // Optional: Add instruction text if there's space
+            int instr_x = field_start_x + FIELD_WIDTH + FIELD_PROMPT_WIDTH + 5;
+            if (instr_x < lastGuiWidth - 20) {
+                mvprintw(menu_y, instr_x, "Enter to search, Esc to cancel");
+            }
             break;
             
         case F_AND_R1:
-            // Clear the menu line
-            mvprintw(menu_y, 0, "%*s", lastGuiWidth, "");
-            draw_text_input_field(menu_y, 2, field_width, L"Find", firstMenuInput, menuCursor, true);
-            mvprintw(menu_y, field_width + 10, "Press Enter to continue");
+            // Clear area after buttons
+            mvprintw(menu_y, field_start_x, "%*s", lastGuiWidth - field_start_x, "");
+            draw_text_input_field(menu_y, field_start_x, FIELD_WIDTH, L"Find", firstMenuInput, menuCursor, true);
+            int instr_x1 = field_start_x + FIELD_WIDTH + FIELD_PROMPT_WIDTH + 5;
+            if (instr_x1 < lastGuiWidth - 15) {
+                mvprintw(menu_y, instr_x1, "Enter to continue");
+            }
             break;
             
         case F_AND_R2:
         case F_AND_R_CYCLE:
-            // Clear both menu lines
-            mvprintw(menu_y - 1, 0, "%*s", lastGuiWidth, "");
-            mvprintw(menu_y, 0, "%*s", lastGuiWidth, "");
+            // Use two lines for find and replace
+            mvprintw(menu_y - 1, field_start_x, "%*s", lastGuiWidth - field_start_x, "");
+            mvprintw(menu_y, field_start_x, "%*s", lastGuiWidth - field_start_x, "");
             
             // Draw both input fields
-            draw_text_input_field(menu_y - 1, 2, field_width, L"Find", firstMenuInput, 0, false);
-            draw_text_input_field(menu_y, 2, field_width, L"Replace", secondMenuInput, menuCursor, true);
-            mvprintw(menu_y, field_width + 10, "Press Enter to replace, Esc to cancel");
+            draw_text_input_field(menu_y - 1, field_start_x, FIELD_WIDTH, L"Find", firstMenuInput, 0, false);
+            draw_text_input_field(menu_y, field_start_x, FIELD_WIDTH, L"Replace", secondMenuInput, menuCursor, true);
+            
+            int instr_x2 = field_start_x + FIELD_WIDTH + FIELD_PROMPT_WIDTH + 5;
+            if (instr_x2 < lastGuiWidth - 25) {
+                mvprintw(menu_y, instr_x2, "Enter to replace, Esc to cancel");
+            }
             break;
     }
 }
@@ -538,12 +560,12 @@ void handle_menu_input(wint_t wch, int status) {
                 
             case KEY_RIGHT:
                 if (currMenuState == FIND || currMenuState == F_AND_R1) {
-                    if (menuCursor < wcslen(firstMenuInput)) {
+                    if (menuCursor < (int)wcslen(firstMenuInput)) {
                         menuCursor++;
                         refreshFlag = true;
                     }
                 } else if (currMenuState == F_AND_R2) {
-                    if (menuCursor < wcslen(secondMenuInput)) {
+                    if (menuCursor < (int)wcslen(secondMenuInput)) {
                         menuCursor++;
                         refreshFlag = true;
                     }
@@ -552,6 +574,7 @@ void handle_menu_input(wint_t wch, int status) {
                 
             case KEY_BACKSPACE:
             case 8:
+            case 127:  // Also handle DEL key as backspace in menu
                 if (menuCursor > 0) {
                     if (currMenuState == FIND || currMenuState == F_AND_R1) {
                         // Remove character from firstMenuInput
@@ -606,7 +629,7 @@ void handle_menu_input(wint_t wch, int status) {
                         target_input = secondMenuInput;
                     }
                     
-                    if (target_input && wcslen(target_input) < max_len) {
+                    if (target_input && (int)wcslen(target_input) < max_len) {
                         // Insert character at cursor position
                         wmemmove(&target_input[menuCursor+1], &target_input[menuCursor], 
                                 wcslen(target_input) - menuCursor + 1);
@@ -984,7 +1007,10 @@ void process_input(void) {
     int status;
 
     status = get_wch(&wch);
-    
+    if (currMenuState != NOT_IN_MENU) {
+        handle_menu_input(wch, status);
+        return;  // Don't process other input while in menu mode
+    }
     // Handle Ctrl+l properly
     if (status == OK && wch == CTRL_KEY('l')) {// changed to 'l' since issue with VS code not allowing ctrl + q inputs.
         close_editor();
@@ -1042,13 +1068,13 @@ if (status == OK && wch == CTRL_KEY('y')) {
         DEBG_PRINT("Copy successful\n");
         
         if (lastGuiHeight >= MENU_HEIGHT) {
-            mvprintw(lastGuiHeight - 2, 0, "Text copied   Ctrl-l to quit");
+            mvprintw(lastGuiHeight - 2, 0, "Text copied   Ctrl-l to quit ");
             refresh();
         }
     } else {
         ERR_PRINT("Failed to copy to clipboard\n");
         if (lastGuiHeight >= MENU_HEIGHT) {
-            mvprintw(lastGuiHeight - 2, 0, "Copy failed   Ctrl-l to quit");
+            mvprintw(lastGuiHeight - 2, 0, "Copy failed   Ctrl-l to quit ");
             refresh();
         }
     }
@@ -1698,7 +1724,8 @@ void updateCursorAndMenu(){
             }
         }
     }
-    
+    draw_menu_interface();
+
     // Position cursor appropriately
     if (currMenuState != NOT_IN_MENU) {
         // Cursor positioning is handled in draw_menu_interface
