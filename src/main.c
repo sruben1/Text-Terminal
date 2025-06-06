@@ -1023,13 +1023,13 @@ void process_input(void) {
             setLineStatsNotUpdated();
             
             if (lastGuiHeight >= MENU_HEIGHT) {
-                mvprintw(lastGuiHeight - 1, 0, "Text pasted   Ctrl-l to quit");
+                mvprintw(lastGuiHeight - 2, 0, "Text pasted   Ctrl-l to quit");
                 refresh();
             }
         } else {
             ERR_PRINT("Failed to paste from clipboard\n");
             if (lastGuiHeight >= MENU_HEIGHT) {
-                mvprintw(lastGuiHeight - 1, 0, "Paste failed   Ctrl-l to quit");
+                mvprintw(lastGuiHeight - 2, 0, "Paste failed   Ctrl-l to quit");
                 refresh();
             }
         }
@@ -1042,13 +1042,13 @@ if (status == OK && wch == CTRL_KEY('y')) {
         DEBG_PRINT("Copy successful\n");
         
         if (lastGuiHeight >= MENU_HEIGHT) {
-            mvprintw(lastGuiHeight - 1, 0, "Text copied   Ctrl-l to quit");
+            mvprintw(lastGuiHeight - 2, 0, "Text copied   Ctrl-l to quit");
             refresh();
         }
     } else {
         ERR_PRINT("Failed to copy to clipboard\n");
         if (lastGuiHeight >= MENU_HEIGHT) {
-            mvprintw(lastGuiHeight - 1, 0, "Copy failed   Ctrl-l to quit");
+            mvprintw(lastGuiHeight - 2, 0, "Copy failed   Ctrl-l to quit");
             refresh();
         }
     }
@@ -1692,7 +1692,7 @@ void updateCursorAndMenu(){
             if (currMenuState == NOT_IN_MENU) {
                 int horizOffs = getCurrHorizontalScrollOffset();
                 int status_x = buttons[2].x + buttons[2].width + 10;
-                mvprintw(lastGuiHeight - 1, status_x, "Ln %d-%d, Col %d-%d   Ctrl-l to quit", 
+                mvprintw(lastGuiHeight - 2, status_x, "Selection: Ln %d-%d, Col %d-%d ", 
                          cursorY + horizOffs + 1, cursorEndY + horizOffs +1, 
                          cursorX + horizOffs + 1, cursorEndX + horizOffs +1);
             }
