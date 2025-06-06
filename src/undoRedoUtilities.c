@@ -1,6 +1,7 @@
 #include "undoRedoUtilities.h"
 #include "debugUtil.h"
 
+/*------ Data structures for internal use ------*/
 typedef struct OperationNode OperationNode;
 struct OperationNode {
     Operation *operation;

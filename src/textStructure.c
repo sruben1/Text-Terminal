@@ -40,7 +40,6 @@ ReturnCode deleteUndoOption(Sequence *sequence, Position beginPosition, Position
 =========================
 */
 
-
 LineBstd getCurrentLineBstd(){
   return LINUX;
 }
@@ -166,7 +165,7 @@ ReturnCode closeSequence( Sequence *sequence, bool forceFlag ){
 
 /*
 =========================
-  Internal Utilities:
+  Internal Utilities
 =========================
 */
 
@@ -423,15 +422,27 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
 
 /*
 =========================
-  Query internals
+Query internals
 =========================
 */
+
 int getCurrentWordCount(Sequence *sequence) {
   return sequence != NULL ? sequence->wordCount : -1; // Return -1 if sequence is NULL
 }
 
 int getCurrentLineCount(Sequence *sequence) {
   return sequence != NULL ? sequence->lineCount : -1; // Return -1 if sequence is NULL
+}
+
+/**
+ * Return Atomic position starting form position 1
+ */
+int backTrackToFirstAtomicInLine(Atomic fromAtomic){
+  // Trivial cases:
+  if(fromAtomic <= 0 || fromAtomic-1 == 0){
+    return 0;
+  }
+  // TODO once merged with latest changes!
 }
 
 /*
@@ -895,25 +906,8 @@ SearchResult findAndReplace(Sequence *sequence, wchar_t *textToFind, wchar_t *te
 
 /*
 =========================
-  Query internals
-=========================
-*/
-
-/**
- * Return Atomic position starting form position 1
- */
-int backTrackToFirstAtomicInLine(Atomic fromAtomic){
-  // Trivial cases:
-  if(fromAtomic <= 0 || fromAtomic-1 == 0){
-    return 0;
-  }
-  // TODO once merged with latest changes!
-}
-
-/*
-=============
   Debug Utils
-=============
+=========================
 */
 
 void debugPrintInternalState(Sequence* sequence, bool showAddBuff, bool showFileBuff){
