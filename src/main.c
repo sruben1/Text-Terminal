@@ -259,7 +259,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                     // Reset variables for next line:
                     atomicsInLine = 0;
                     sinceHorizScrollCounter = 0;
-                    frozenLineStart = firstAtomic + offsetCounter + 1;
+                    frozenLineStart = firstAtomic + currentSectionStart + offsetCounter + 1;
                     nbrOfUtf8CharsInLine = 0;
                     nbrOfUtf8CharsNoControlCharsInLine = 0;
                 } else{
