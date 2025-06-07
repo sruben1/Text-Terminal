@@ -54,6 +54,8 @@ bool refreshFlag = true;
 
 static int lastGuiHeight = 0, lastGuiWidth = 0;
 
+int screenTopLine = 0;
+
 // Menu implementations:
 enum _MenuState { NOT_IN_MENU, FIND, FIND_CYCLE, F_AND_R1, F_AND_R2, F_AND_R_CYCLE };
 static enum _MenuState currMenuState = NOT_IN_MENU;
@@ -178,6 +180,8 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                     /* Error case, lonely '\n' found despite '\r\n' current standard !*/
                     ERR_PRINT("Warning case, lonely '\n' found despite \"\r\n\" current standard !\n");
                 }
+                
+                if(currLineBcount >= screenTopLine){ // Only lines appear that are in scrolled frame
                 wchar_t* lineToPrint = utf8_to_wchar(&currentItemBlock[currentSectionStart], offsetCounter+1, nbrOfUtf8Chars);
                 if (lineToPrint == NULL){
                     ERR_PRINT("utf_8 to Wchar conversion failed! ending here!\n");
@@ -227,13 +231,14 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                         sinceHorizScrollCounter = 0;
                     }
                     if (nbrOfUtf8CharsNoControlCharsInLine + nbrOfUtf8CharsNoControlChars > horizontalScroll){ 
-                        mvwaddwstr(stdscr, currLineBcount, sinceHorizScrollCounter, lineToPrint + horizontalScroll);
+                        mvwaddwstr(stdscr, currLineBcount - screenTopLine, sinceHorizScrollCounter, lineToPrint + horizontalScroll);
                     }
 
                 }
 
                 /* reset&setup for next block/line iteration: */
                 free(lineToPrint);
+                }
                 if ((currentItemBlock[currentSectionStart + offsetCounter] == currentLineBidentifier) || (currentItemBlock[currentSectionStart + offsetCounter] == END_OF_TEXT_CHAR)){
                     // handle this blocks line stats:
                     atomicsInLine += offsetCounter+1;
@@ -1155,10 +1160,12 @@ if (status == OK && wch == CTRL_KEY('y')) {
                 changeRangeEndAndUpdate(-1,0);
                 break;
             case KEY_NPAGE: // Page up as select up
-                changeRangeEndAndUpdate(0,1);
+                //changeRangeEndAndUpdate(0,1);
+                changeScrolling(1, false);
                 break;
             case KEY_PPAGE: // Page down as select down
-                changeRangeEndAndUpdate(0,-1);
+                //changeRangeEndAndUpdate(0,-1);
+                changeScrolling(-1, false);
                 break;
              /*---- Backspace & Delete ----*/
             case KEY_BACKSPACE: // Backspace
@@ -1330,6 +1337,7 @@ if (status == OK && wch == CTRL_KEY('y')) {
                         cursorX = 0;
                         cursorY++;
                         resetRangeSelectionState();
+                        //changeScrolling(1, true);
                         DEBG_PRINT("After Enter: cursor moved to (%d, %d)\n", cursorY, cursorX);
                     } else {
                         ERR_PRINT("Failed to insert line break\n");
@@ -1388,6 +1396,59 @@ if (status == OK && wch == CTRL_KEY('y')) {
   Cursor handling
 =================
 */
+
+// Handle vertical scrolling
+void changeScrolling(int incrY, bool enterKey){
+    int newY = cursorY + incrY;
+
+    if (incrY != 0) {
+        DEBG_PRINT("changeScrolling in if statement (incrY != 0)\n");
+        int totalLines = getCurrentLineCount(activeSequence);
+        DEBG_PRINT("totalLines: %d\n", totalLines);
+        if (totalLines < 0) totalLines = 0;  // Handle error case if totalLines negative
+        
+        int visibleLines = lastGuiHeight - MENU_HEIGHT; // Lines on screen
+        if (visibleLines < 0) {
+            // Not enough space for text display
+            newY = 0;
+        } else {
+            if (incrY < 0) {
+                // Scroll up
+                DEBG_PRINT("changeScrolling scroll up\n");
+                if (screenTopLine > 0) { // Can't scroll up further when at the very top
+                    screenTopLine--;
+                    cursorY++;
+                    cursorEndY++;
+                    moveAbsoluteLineNumbers(activeSequence, -1);
+                    newY = 0;
+                    refreshFlag = true;
+                } else {
+                    newY = 0;
+                }
+            } else if (incrY > 0 && enterKey == false) {
+                // Scroll down
+                DEBG_PRINT("changeScrolling scroll down\n");
+                if (2 < totalLines) {
+                    screenTopLine++;
+                    cursorY--;
+                    cursorEndY--;
+                    moveAbsoluteLineNumbers(activeSequence, 1);
+                    newY = visibleLines - 1;
+                    refreshFlag = true;
+                } else {
+                    newY = visibleLines - 1;
+                }
+            } //else if (enterKey == true && cursorY == visibleLines){
+                // Scroll down
+                //DEBG_PRINT("changeScrolling scroll down with enter key\n");
+                //screenTopLine++;
+                //moveAbsoluteLineNumbers(activeSequence, 1);
+                //newY = visibleLines - 1;
+                //refreshFlag = true;
+            //}
+        }
+    }
+}
 
 /* ----- Increment cursor -----*/
 /**
@@ -1676,7 +1737,7 @@ void updateCursorAndMenu(){
     if(cursorNotInRangeSelectionState()){
         autoAdjustHorizontalScrolling(false);
         // Perform this to ensure correct ranges still ensured:
-        //relocateCursorNoUpdate(cursorX,cursorY);
+        relocateCursorNoUpdate(cursorX,cursorY);
         int horizOffs = getCurrHorizontalScrollOffset();
 
         if (lastGuiHeight >= MENU_HEIGHT) {
