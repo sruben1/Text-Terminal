@@ -19,4 +19,6 @@ typedef struct {
 TextStatistics calculateStatsEffect(Sequence *sequence, DescriptorNode *startNode, int startOffset, 
     DescriptorNode *endNode, int endOffset, LineBidentifier lineBreakIdentifier);
 
+LineBidentifier findMostLikelyLineBreakStd(Sequence *sequence);
+
 #endif

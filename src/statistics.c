@@ -1,6 +1,8 @@
 #include "statistics.h"
 #include <wchar.h>
 
+#include "debugUtil.h"
+
 /**
  * Counts the number of line breaks and words caused by the data between two DescriptorNodes in a given sequence.
  * The counting starts from the startNode at startOffset and goes to the endNode at endOffset.
@@ -108,3 +110,10 @@ TextStatistics calculateStatsEffect(Sequence *sequence, DescriptorNode *startNod
 }
 
     
+/**
+ * Finds the lineBstd to use for new opening, by checking the file buffer for most common occurrence.
+ */
+LineBidentifier findMostLikelyLineBreakStd(Sequence *sequence){
+    DEBG_PRINT("Decided on lineBstd:%d.\n", LINUX);
+    return LINUX;
+}

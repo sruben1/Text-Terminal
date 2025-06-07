@@ -106,15 +106,25 @@ Sequence* empty(){
   return newSeq;
 }
 
-Sequence* loadOrCreateNewFile( char *pathname ){
+Sequence* loadOrCreateNewFile( char* filePath, LineBstd stdIfNewCreation){
   if(fdOfCurrentOpenFile != 0){
     ERR_PRINT("Error, Close currently open file first!\n");
+    fprintf(stderr, "Error, Close currently open file first!\n");
     return NULL;
   }
-  // _currLineB = initSequenceFromOpenOrCreate(pathname, empty(), &fdOfCurrentOpenFile, LINUX);
+  Sequence* newSeq = empty();
+  _currLineB = initSequenceFromOpenOrCreate(filePath, newSeq, &fdOfCurrentOpenFile, stdIfNewCreation);
+
+
+  if(_currLineB == NO_INIT){
+    ERR_PRINT("Fatal error at file open or create, stoping now.\n");
+    fprintf(stderr, "Fatal error at file open or create, stoping now. \nMight need to pass file standard to resolve.\n");
+    closeSequence(newSeq, true);
+    exit(-1);
+  }
 
   switch (_currLineB){
-    case MSDOS:
+    case MSDOS: // Intended double handler
     case LINUX:
       _currLineBidentifier = LINUX_MSDOS_ID;
       break;
@@ -122,10 +132,16 @@ Sequence* loadOrCreateNewFile( char *pathname ){
       _currLineBidentifier = MAC_ID;
       break;
     default:
-      _currLineBidentifier = NO_INIT;
+      ERR_PRINT("Fatal error at file open or create, stoping now.\n");
+      fprintf(stderr, "Fatal error at file open or create, stoping now.\n");
+      closeSequence(newSeq, true);
+      exit(-1);
       break;
   }
 
+  generateStructureForFileContent(newSeq);
+
+  return newSeq;
 }
 
 /*
@@ -135,12 +151,12 @@ Sequence* loadOrCreateNewFile( char *pathname ){
 */
 
 ReturnCode closeSequence( Sequence *sequence, bool forceFlag ){
-  freeOperationStack(sequence->undoStack);
-  freeOperationStack(sequence->redoStack);
   if(!forceFlag && currentlySaved == false){
     return -1;
   } 
   if(sequence != NULL){
+    freeOperationStack(sequence->undoStack);
+    freeOperationStack(sequence->redoStack);
     DescriptorNode* curr = sequence->pieceTable.first;
     while(curr != NULL){
       DescriptorNode* next = curr->next_ptr;
@@ -149,18 +165,21 @@ ReturnCode closeSequence( Sequence *sequence, bool forceFlag ){
     }
 
     //TODO : free file related resources!
-    // munmap(fdOfCurrentOpenFile, sequence->fileBuffer.capacity);
-    // close(fdOfCurrentOpenFile);
+    closeAllFileResources(sequence, fdOfCurrentOpenFile);
     
     _currLineB = NO_INIT;
     _currLineBidentifier = NONE_ID;
-    free(sequence->fileBuffer.data);
+
     free(sequence->addBuffer.data);
     free(sequence);
-    sequence == NULL;
+    sequence = NULL;
     return 1;
   }
   return -1;
+}
+
+ReturnCode saveSequence( Sequence *sequence){
+  saveSequenceToOpenFile(sequence, fdOfCurrentOpenFile);
 }
 
 /*
@@ -168,6 +187,110 @@ ReturnCode closeSequence( Sequence *sequence, bool forceFlag ){
   Internal Utilities:
 =========================
 */
+
+/**
+ * creates file buffer node and initializes adjacent structures when opening. 
+ */
+ReturnCode generateStructureForFileContent(Sequence *sequence){
+  DEBG_PRINT("Generating inital file buffer structure...\n");
+  if(sequence == NULL){
+    ERR_PRINT("Not all values acceptable for generate file content structure in piece table.");
+    return -1;
+  }
+
+  if(sequence->fileBuffer.size == 0){
+    // nothing to do since file empty
+    return 1;
+  }
+
+  // Adaptation of a similar code section at insert() -> case: at existing piece table split.
+  DescriptorNode* newInsert = (DescriptorNode*) malloc(sizeof(DescriptorNode));
+  if(newInsert == NULL){
+    ERR_PRINT("Fatal malloc fail at insert operation!\n");
+    return -1;
+  }
+  
+  newInsert->isInFileBuffer = true;
+  newInsert->offset = 0;
+  newInsert->size = sequence->fileBuffer.size;
+
+  DEBG_PRINT("Creating new file buffer node, buffer pointer:%p, offset%d, size:%d", sequence->fileBuffer.data, newInsert->offset, newInsert->size);
+  
+  NodeResult nodeResult = getNodeForPosition(sequence, 0);
+  /*
+  if(nodeResult.startPosition != -1){
+    DEBG_PRINT("0-th Node found at start position 0.\n");
+  } else{
+    ERR_PRINT("0-th Node found at start position 0 INVALID.\n");
+    return -1;
+  }*/
+
+  // Insert the new node into the piece table
+  if (nodeResult.startPosition == 0){
+    // Position is at already existing piece table split
+    DEBG_PRINT("Insert at already existing piece table split.\n");
+
+    DescriptorNode* next = nodeResult.node;
+    if (next == NULL) {
+      ERR_PRINT("Fatal error: next node is NULL!\n");
+      free(newInsert);
+      return -1; // Error: Invalid state
+    }
+    DescriptorNode* prev = next->prev_ptr;
+    if (prev == NULL) {
+      ERR_PRINT("Fatal error: previous node is NULL!\n");
+      free(newInsert);
+      return -1; // Error: Invalid state
+    }
+
+    /* 
+    NOT NEEDED...
+    TODO : maybe might still need some init stuff:
+
+    // Save state for undo
+    Operation *operation = (Operation*) malloc(sizeof(Operation));
+    if (operation == NULL) {
+      ERR_PRINT("Fatal malloc fail at insert operation!\n");
+      free(newInsert);
+      return -1; // Error
+    }
+    operation->first = prev;
+    operation->oldNext = next;
+    operation->last = next;
+    operation->oldPrev = prev;
+    operation->wordCount = prevWordCount;
+    operation->lineCount = prevLineCount;
+    operation->optimizedCase = 0; // Not an optimized case
+    operation->optimizedCaseSize = 0; // Not used in this case
+    if (pushOperation(sequence->undoStack, operation) == 0) {
+      ERR_PRINT("Failed to push operation onto undo stack.\n");
+      free(newInsert);
+      free(operation);
+      return -1; // Error
+    }
+
+    // Reset the redo stack
+    freeOperationStack(sequence->redoStack);
+    sequence->redoStack = createOperationStack();
+    */
+    // Update the piece table
+    prev->next_ptr = newInsert;
+    newInsert->next_ptr = next;
+    newInsert->prev_ptr = prev;
+    next->prev_ptr = newInsert;
+
+
+    // Update statistics
+    TextStatistics stats = calculateStatsEffect(sequence, newInsert, 0, newInsert, newInsert->size - 1, getCurrentLineBidentifier());
+    sequence->wordCount += stats.totalWords;
+    sequence->lineCount += stats.totalLineBreaks + 1;
+
+    DEBG_PRINT("Generating inital file buffer structure done.\n");
+    debugPrintInternalState(sequence, true, true);
+    
+    return 1;
+}
+}
 
 /**
  * Helper function for traversing the piece table to find the node containing text at a given position. 
@@ -342,11 +465,11 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
 =========================
 */
 int getCurrentWordCount(Sequence *sequence) {
-  return sequence != NULL ? sequence->wordCount : -1; // Return -1 if sequence is NULL
+  return sequence != NULL ? sequence->wordCount : 0; // Return 0 if sequence is NULL since only used by GUI and no backend
 }
 
 int getCurrentLineCount(Sequence *sequence) {
-  return sequence != NULL ? sequence->lineCount : -1; // Return -1 if sequence is NULL
+  return sequence != NULL ? sequence->lineCount : 0; // Return 0 if sequence is NULL since only used by GUI and no backend
 }
 
 /**

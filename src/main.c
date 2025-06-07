@@ -8,7 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h> // for ceil and other math
-
 #include <sys/wait.h>  
 #include <unistd.h>
 
@@ -16,6 +15,7 @@
 #include "guiUtilities.h" // Some utility backend used for the GUI
 #include "debugUtil.h" // For easy managmenet of logger and error messages
 #include "profiler.h" //Custom profiler for easy metrics
+#include "undoRedoUtilities.h" // handler for all undo/redos
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 
@@ -78,17 +78,15 @@ ReturnCode deleteCurrentSelectionRange();
 
 
 /*======== operations ========*/
-ReturnCode open_and_setup_file(char* file_path){
-    // Don't reassign activeSequence if it's already initialized
-    if (activeSequence == NULL) {
-        activeSequence = empty(); // Remove parameter if empty() takes none
-        if (activeSequence == NULL) {
-            ERR_PRINT("Failed to create empty sequence in open_and_setup_file!\n");
-            return -1;
-        }
+ReturnCode open_and_setup_file(char* filePath, LineBstd stdIfNewCreation){
+    
+    activeSequence = loadOrCreateNewFile(filePath, stdIfNewCreation);
+    if(activeSequence == NULL){
+        ERR_PRINT("Sequence pointer ended as NULL in initial setup, Fatal error.\n");
     }
-    currentLineBreakStd = LINUX;//getCurrentLineBstd();
-    currentLineBidentifier = LINUX_MSDOS_ID;//getCurrentLineBidentifier();
+    
+    currentLineBreakStd = getCurrentLineBstd();
+    currentLineBidentifier = getCurrentLineBidentifier();
     return 1;
 }
 
@@ -271,13 +269,14 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
 =========================
 */
 int main(int argc, char *argv[]){
-    DEBG_PRINT("initialized!\n");
+
 
     //Setup debugger utility:
     if (0 > initDebuggerFiles()){
         //Error case, but ignore since messages already sent...
     }
-    
+    DEBG_PRINT("initialized!\n");
+
     // Set UTF-8 locale
     if(setlocale(LC_ALL, "en_US.UTF-8") == NULL){ 
         ERR_PRINT("Fatal error: failed to set LOCALE to UTF-8!\n");
@@ -286,14 +285,40 @@ int main(int argc, char *argv[]){
     DEBG_PRINT("Wide char type: %d\n",sizeof(wchar_t));
     DEBG_PRINT("Wide int char type: %d\n",sizeof(wint_t));
 
-    // Initialize ncurses first
-    init_editor();
+    LineBstd toUseForNew = NO_INIT;
+    DEBG_PRINT("ARG count%d\n", argc);
+    if(argc > 1){
+        if(argc > 2){
+            DEBG_PRINT("handling line b std arg input.\n");
+            switch (atoi(argv[2])){
+                case 0:
+                    toUseForNew = LINUX; 
+                    DEBG_PRINT("Linux case.\n");
+                    break;
+                case 1:
+                    toUseForNew = MSDOS; 
+                    DEBG_PRINT("Msdos case.\n");
+                    break;
+                case 2:
+                    DEBG_PRINT("Mac case.\n");
+                    toUseForNew = MAC; 
+                    break;
+            }
+        }
+    } else{
+        ERR_PRINT("Error argc insufficient.\n");
+        fprintf(stderr, "Argument issue, usage: ./textterminal.out [mandatory relative path to existing or new file] [only for new file creation: file standard 0,1, or 2]\n");
+        exit(-1);
+    }
 
-    if (open_and_setup_file("TODO later") < 0) {
+    if (open_and_setup_file(argv[1],toUseForNew) < 0) {
         ERR_PRINT("Failed to create empty sequence!\n");
         close_editor();
-        return -1;
+        exit(-1);
     }
+
+    // Initialize ncurses first
+    init_editor();
 
     //insert(activeSequence, 0, L"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad");
     
@@ -677,10 +702,9 @@ ReturnCode sendToXclip(const char* text) {
 void close_editor(void) {
     closeDebuggerFiles;
     endwin();
-    if (activeSequence) {
-        closeSequence(activeSequence, true); // Force close
-        activeSequence = NULL;
-    }
+    
+    closeSequence(activeSequence, true); // Force close
+    activeSequence = NULL;
 }
 
 void checkSizeChanged(void){
@@ -772,6 +796,30 @@ void process_input(void) {
         }
     }
     */
+
+    if (status == OK && wch ==  CTRL_KEY('z')){
+        DEBG_PRINT("Processing UNDO.\n");
+        if(undo(activeSequence) > 0){
+            DEBG_PRINT("undo might have succeeded.\n");
+            refreshFlag == true;
+        }
+    }
+
+    if (status == OK && wch == CTRL_KEY('r')){
+        DEBG_PRINT("Processing REDO.\n");
+        if (redo(activeSequence) > 0){
+            DEBG_PRINT("redo might have succeeded.\n");
+            refreshFlag == true;
+        }
+    }
+
+    if (status == OK && wch == CTRL_KEY('s')){
+        DEBG_PRINT("Processing SAVE.\n");
+        if (saveSequence(activeSequence) > 0){
+            refreshFlag == true;
+        }
+    }
+
     if (status == KEY_CODE_YES) {
         // Function key pressed
         int posStart = -1; // Used for delete and backspace
@@ -785,7 +833,8 @@ void process_input(void) {
                         if (event.y < lastGuiHeight - MENU_HEIGHT){
                             currMenuState = NOT_IN_MENU;
                             // Text cursor case:
-                                relocateAndupdateCursorAndMenu(event.x, event.y);
+                            relocateAndupdateCursorAndMenu(event.x, event.y);
+                            autoAdjustHorizontalScrolling(false);
                         }  else{
                             // Menu interactions case:
 
@@ -795,6 +844,7 @@ void process_input(void) {
                         // Dragging end coordinates:
                         DEBG_PRINT("Drag ended at: X:%d Y:%d",event.x, event.y);
                         relocateRangeEndAndUpdate(event.x, event.y);
+                        autoAdjustHorizontalScrolling(true);
                     }
                 }  
 
@@ -1055,6 +1105,7 @@ void process_input(void) {
                     }
                     refreshFlag = true;
                     setLineStatsNotUpdated();
+                    debugPrintInternalState(activeSequence, true, true);
                 }// Log unhandled case for debugging
                 else {
                     DEBG_PRINT("Ignored character input: U+%04X (decimal: %d), name %s\n", (unsigned int)wch, (int)wch, keyname(wch));
@@ -1259,7 +1310,7 @@ bool autoAdjustHorizontalScrolling(bool forEndCursor){
 
     // hardcoded limit to move horiz Scroll by 1/2 width as soon as reach rightEnd-2 or move back as soon as lower 3. 
     if(!forEndCursor){
-        int multiplier = (int)ceil(abs(cursorX) / (double)baseScroll);
+        int multiplier = (int)round(abs(cursorX) / (double)baseScroll);
         if(currHorizScroll > 0 && cursorX < 3){
             DEBG_PRINT("Horiz scroll case 1.\n");
             newHorizScroll = -(multiplier * baseScroll);
@@ -1268,7 +1319,7 @@ bool autoAdjustHorizontalScrolling(bool forEndCursor){
             newHorizScroll = +(multiplier * baseScroll);
         }
     } else{
-       int multiplier = (int)ceil(abs(cursorEndX) / (double)baseScroll);
+       int multiplier = (int)round(abs(cursorEndX) / (double)baseScroll);
         if(currHorizScroll > 0 && cursorEndX < 3){
             DEBG_PRINT("Horiz scroll case 3.\n");
             newHorizScroll = -(multiplier * baseScroll);
@@ -1359,11 +1410,11 @@ void updateCursorAndMenu(){
     if(cursorNotInRangeSelectionState()){
         autoAdjustHorizontalScrolling(false);
         // Perform this to ensure correct ranges still ensured:
-        //relocateCursorNoUpdate(cursorX,cursorY);
+        relocateCursorNoUpdate(cursorX,cursorY);
         int horizOffs = getCurrHorizontalScrollOffset();
 
         if (lastGuiHeight >= MENU_HEIGHT) {
-            mvprintw(lastGuiHeight - 1, 0, "Ln %d, Col %d   Ctrl-l to quit", cursorY + horizOffs + 1, cursorX + horizOffs + 1);
+            mvprintw(lastGuiHeight - 1, 0, "Ln %d, Col %d || %d words, %d lines || Ctrl-l to quit", cursorY + horizOffs + 1, cursorX + horizOffs + 1, getCurrentWordCount(activeSequence), getCurrentLineCount(activeSequence));
             clrtoeol(); // Clear rest of status line
         }
     } else{
@@ -1384,7 +1435,7 @@ void updateCursorAndMenu(){
         
         if (lastGuiHeight >= MENU_HEIGHT) {
             int horizOffs = getCurrHorizontalScrollOffset();
-            mvprintw(lastGuiHeight - 1, 0, "Ln %d-%d, Col %d-%d   Ctrl-l to quit", cursorY + horizOffs + 1, cursorEndY + horizOffs +1, cursorX + horizOffs + 1, cursorEndX + horizOffs +1);
+            mvprintw(lastGuiHeight - 1, 0, "Ln %d-%d, Col %d-%d || %d words, %d lines || Ctrl-l to quit", cursorY + horizOffs + 1, cursorEndY + horizOffs +1, cursorX + horizOffs + 1, cursorEndX + horizOffs +1, getCurrentWordCount(activeSequence), getCurrentLineCount(activeSequence));
             clrtoeol(); // Clear rest of status line
         }
 

@@ -78,7 +78,7 @@ LineBidentifier getCurrentLineBidentifier(); /* returns '\n' for Linux & MSDOS o
   Quit
 =========================
 */
-ReturnCode saveSequence( char *pathname, Sequence *sequence );
+ReturnCode saveSequence( Sequence *sequence);
 ReturnCode closeSequence( Sequence *sequence, bool forceFlag ); /* Free all resources of specified sequence, forceFlag: 1 -> Close even if not saved, 0 -> Close only when saved */
 
 /*

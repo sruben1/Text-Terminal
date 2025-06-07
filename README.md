@@ -23,9 +23,9 @@ To compile from our source, in the project root directory use:
 ```
 make build
 ```
-To start *Text-Terminal*:
+To start *Text-Terminal* use a relative path to existing or new file to create. As  file standard if  0: Linux, 1: Windows 2: Mac:
 ```
-./textterminal.out [mandatory relative path to existing or new file]
+./textterminal.out [mandatory relative path to existing or new file] [optional 0,1, or 2]
 ```
 ### In the Application
 Ensure that the text file is not modified while it is open in *Text-Terminal* since it uses the original file in it's current state to provide high efficiency.
