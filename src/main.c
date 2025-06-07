@@ -800,23 +800,23 @@ void process_input(void) {
     if (status == OK && wch ==  CTRL_KEY('z')){
         DEBG_PRINT("Processing UNDO.\n");
         if(undo(activeSequence) > 0){
-            DEBG_PRINT("undo might have succeeded.\n");
-            refreshFlag == true;
+            DEBG_PRINT("Undo might have succeeded.\n");
+            refreshFlag = true;
         }
     }
 
     if (status == OK && wch == CTRL_KEY('r')){
         DEBG_PRINT("Processing REDO.\n");
         if (redo(activeSequence) > 0){
-            DEBG_PRINT("redo might have succeeded.\n");
-            refreshFlag == true;
+            DEBG_PRINT("Redo might have succeeded.\n");
+            refreshFlag = true;
         }
     }
 
     if (status == OK && wch == CTRL_KEY('s')){
         DEBG_PRINT("Processing SAVE.\n");
         if (saveSequence(activeSequence) > 0){
-            refreshFlag == true;
+            DEBG_PRINT("Save might have succeeded.\n");
         }
     }
 
