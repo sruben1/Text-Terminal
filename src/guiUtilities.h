@@ -68,7 +68,7 @@ ReturnCode updateLine(int relativeLineNumber, int absoluteGeneralAtomicPosition 
  * Function to call when scrolling.
  *  requires full update of statistics afterwards since operation invalidates internal state.
  */
-ReturnCode moveAbsoluteLineNumbers(int addOrSubstractOne, Sequence *seq);
+ReturnCode moveAbsoluteLineNumbers(Sequence *sequence, int addOrSubstractOne);
 
 /**
  * Function to call when scrolling. Counting line numbers form 0. 

@@ -1,5 +1,6 @@
 #include "statistics.h"
 #include <wchar.h>
+#include "debugUtil.h"
 
 #include "debugUtil.h"
 
@@ -13,9 +14,10 @@
 TextStatistics calculateStatsEffect(Sequence *sequence, DescriptorNode *startNode, int startOffset, 
     DescriptorNode *endNode, int endOffset, LineBidentifier lineBreakIdentifier) {
 
-    TextStatistics stats = {0, 0};
+    TextStatistics stats = {0, 0}; // Empty statistics as default -> no effect
     if (sequence == NULL || startNode == NULL || endNode == NULL || startOffset < 0 || endOffset < 0) {
-        return stats; // Return empty statistics if sequence or nodes are NULL or offsets are invalid
+        ERR_PRINT("Invalid parameters for calculateStatsEffect: sequence, startNode, endNode must not be NULL and offsets must be non-negative.\n");
+        return stats;
     }
 
     DescriptorNode *currentNode = startNode;

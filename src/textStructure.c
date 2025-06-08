@@ -21,27 +21,23 @@ static LineBstd _currLineB = NO_INIT;
 static LineBidentifier _currLineBidentifier = NONE_ID;
 static bool currentlySaved = true;
 static Atomic endOfTextSignal = END_OF_TEXT_CHAR;
-static struct _lastInsert
-{
-  int _lastAtomicPos;
-  int _lastCharSize;
-  long int _lastWritePos;
-} _lastInsert ={-1,-1, -1};
-
 
 /*------ Declarations ------ */
 NodeResult getNodeForPosition(Sequence *sequence, Position position);
-ReturnCode writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert, int *sizeOfCharOrNull);
 int isContinuationByte(Sequence *sequence, DescriptorNode *node, int offsetInBlock);
 int amountOfContinuationBytes(Sequence *sequence, DescriptorNode *node, int offsetInBlock);
 size_t getUtf8ByteSize(const wchar_t* wstr);
+ReturnCode writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert, int *sizeOfCharOrNull);
+int textMatchesBuffer(Sequence *sequence, DescriptorNode *node, int offset, Atomic *needle, size_t needleSize);
+int getLineNumber(Sequence *sequence, Position position);
+ReturnCode insertUndoOption(Sequence *sequence, Position position, wchar_t *textToInsert, Operation *previousOperation);
+ReturnCode deleteUndoOption(Sequence *sequence, Position beginPosition, Position endPosition, Operation *previousOperation);
 
 /*
 =========================
   Setup
 =========================
 */
-
 
 LineBstd getCurrentLineBstd(){
   return LINUX;
@@ -67,6 +63,11 @@ Sequence* empty(){
   }
   newSeq->wordCount = 0;
   newSeq->lineCount = 0;
+  newSeq->lastLineResult.foundPosition = -1;
+  newSeq->lastLineResult.lineNumber = -1;
+  newSeq->lastInsert.lastAtomicPos = -1;
+  newSeq->lastInsert.lastCharSize = -1;
+  newSeq->lastInsert.lastWritePos = -1;
 
   // Create sentinel nodes for the piece table
   DescriptorNode* firstNode = (DescriptorNode*) malloc(sizeof(DescriptorNode));
@@ -178,7 +179,7 @@ ReturnCode saveSequence( Sequence *sequence){
 
 /*
 =========================
-  Internal Utilities:
+  Internal Utilities
 =========================
 */
 
@@ -293,6 +294,7 @@ NodeResult getNodeForPosition(Sequence *sequence, Position position){
   NodeResult result = {NULL, -1};
 
   if (sequence == NULL || position < 0){
+    ERR_PRINT("getNodeForPosition called with invalid sequence or position.\n");
     return result; // Error 
   }
 
@@ -323,11 +325,13 @@ NodeResult getNodeForPosition(Sequence *sequence, Position position){
  */
 int isContinuationByte(Sequence *sequence, DescriptorNode *node, int offsetInBlock) {
   if (node == NULL || offsetInBlock < 0) {
+    ERR_PRINT("isContinuationByte called with invalid node or offset.\n");
     return -1; // Error
   }
 
   Atomic *data = node->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
   if (data == NULL) {
+    ERR_PRINT("Data buffer is NULL.\n");
     return -1; // Error
   }
 
@@ -341,11 +345,13 @@ int isContinuationByte(Sequence *sequence, DescriptorNode *node, int offsetInBlo
  */
 int amountOfContinuationBytes(Sequence *sequence, DescriptorNode *node, int offsetInBlock) {
   if (node == NULL || offsetInBlock < 0) {
+    ERR_PRINT("amountOfContinuationBytes called with invalid node or offset.\n");
     return -1; // Error
   }
 
   Atomic *data = node->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
   if (data == NULL) {
+    ERR_PRINT("Data buffer is NULL.\n");
     return -1; // Error
   }
   Atomic byte = data[node->offset + offsetInBlock];
@@ -361,6 +367,7 @@ int amountOfContinuationBytes(Sequence *sequence, DescriptorNode *node, int offs
     for (int i = offsetInBlock + 1; i < node->size; i++) {
       int result = isContinuationByte(sequence, node, i);
       if (result == -1) {
+        ERR_PRINT("Call of isContinuationByte failed.\n");
         return -1; // Error
       } else if (result == 0) {
         break; // Not a continuation byte
@@ -381,6 +388,7 @@ size_t getUtf8ByteSize(const wchar_t* wstr) {
 /* Appends the textToInsert to the add buffer, returns the (offset) Position */
 Position writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert, int *sizeOfCharOrNull) {
     if (sequence == NULL || textToInsert == NULL) {
+        ERR_PRINT("writeToAddBuffer called with invalid sequence or text.\n");
         return -1; // Error: Invalid input
     }
 
@@ -398,12 +406,13 @@ Position writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert, int *sizeOf
     if (sequence->addBuffer.capacity < sequence->addBuffer.size + byteLength) {
         size_t newCapacity = (sequence->addBuffer.capacity == 0) ? byteLength : sequence->addBuffer.capacity * 2;
         while (newCapacity < sequence->addBuffer.size + byteLength) {
-            newCapacity *= 2;
+          newCapacity *= 2;
         }
 
         char *newData = realloc(sequence->addBuffer.data, newCapacity);
         if (newData == NULL) {
-            return -1; // Error: Memory allocation failed
+          ERR_PRINT("Memory allocation failed while resizing add buffer.\n");
+          return -1;
         }
 
         sequence->addBuffer.data = newData;
@@ -418,6 +427,93 @@ Position writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert, int *sizeOf
     return (Position) offset;
 }
 
+/**
+ * Compares the given text (needle) with the text starting at a given node and offset inside the node.
+ * Returns 1 if the text matches, 0 if it does not match.
+ */
+int textMatchesBuffer(Sequence *sequence, DescriptorNode *node, int offset, Atomic *needle, size_t needleSize) {
+  DescriptorNode* currNode = node;
+  int currentOffset = offset;
+  Atomic *buffer = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+
+  for (int i = 0; i < needleSize; i++) {
+    // Get the correct node and data for the i-th character
+    while (currentOffset >= currNode->size) {
+      currNode = currNode->next_ptr;
+      if (currNode == sequence->pieceTable.last || currNode == NULL) {
+        return 0; // Reached the end of the piece table without finding a match
+      }
+      currentOffset = 0;
+      buffer = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+    }
+
+    if (buffer[currNode->offset + currentOffset] != needle[i]) {
+      return 0; // Mismatch found
+    }
+    
+    currentOffset++;
+  }
+  
+  return 1; // All characters matched
+}
+
+/**
+ * Returns the line number for a given position in the sequence.
+ * If there is a line break at the position, the line break itself is allocated to the next line
+ * (e.g. a call for position 5 in "Hello\nWorld" will return 2, not 1).
+ * If the position is invalid, returns -1.
+ */
+int getLineNumber(Sequence *sequence, Position position) {
+  if (sequence == NULL || position < 0) {
+    ERR_PRINT("getLineNumber called with invalid sequence or position.\n");
+    return -1;
+  }
+
+  int lineNumber = 1;
+  int stepsAmount = position + 1; // Number of characters to traverse
+  DescriptorNode* currNode = sequence->pieceTable.first;
+  int offsetInNode = 0;
+
+  // If the position comes after the position of the last known line result, we can start from there
+  Position lastPosition = sequence->lastLineResult.foundPosition;
+  if (lastPosition != -1 && lastPosition <= position) {
+    DEBG_PRINT("Using cached last line result for position %d.\n", lastPosition);
+    NodeResult nodeResult = getNodeForPosition(sequence, lastPosition);
+    if (nodeResult.node == NULL) {
+      ERR_PRINT("Position %d out of bounds when accessing lastLineResult.\n", lastPosition);
+      return -1;
+    }
+    lineNumber = sequence->lastLineResult.lineNumber;
+    stepsAmount = position - lastPosition;
+    currNode = nodeResult.node;
+    offsetInNode = lastPosition - nodeResult.startPosition;
+  }
+
+  Atomic *buffer = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+  LineBidentifier lineBreakId = getCurrentLineBidentifier();
+
+  for (int i = 0; i < stepsAmount; i++) {
+    // Get the correct node and data for the i-th character
+    while (offsetInNode >= currNode->size) {
+      currNode = currNode->next_ptr;
+      if (currNode == sequence->pieceTable.last || currNode == NULL) {
+        ERR_PRINT("Position %d out of bounds in getLineNumber.\n", position);
+        return -1; // Position out of bounds
+      }
+      offsetInNode = 0;
+      buffer = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+    }
+
+    if (buffer[currNode->offset + offsetInNode] == lineBreakId) {
+      lineNumber++; // Count a line break
+    } 
+
+    offsetInNode++;
+  }
+
+  return lineNumber;
+}
+
 /*
 =========================
   Read
@@ -426,6 +522,7 @@ Position writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert, int *sizeOf
 
 Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemBlock){
   if (sequence == NULL || position < 0 || returnedItemBlock == NULL){
+    ERR_PRINT("getItemBlock called with invalid sequence, position, or returnedItemBlock.\n");
     return -1; // Error
   }
   Size size = -1;
@@ -458,23 +555,13 @@ Size getItemBlock( Sequence *sequence, Position position, Atomic **returnedItemB
   Query internals
 =========================
 */
+
 int getCurrentWordCount(Sequence *sequence) {
   return sequence != NULL ? sequence->wordCount : 0; // Return 0 if sequence is NULL since only used by GUI and no backend
 }
 
 int getCurrentLineCount(Sequence *sequence) {
   return sequence != NULL ? sequence->lineCount : 0; // Return 0 if sequence is NULL since only used by GUI and no backend
-}
-
-/**
- * Return Atomic position starting form position 1
- */
-int backTrackToFirstAtomicInLine(Sequence *sequence, Atomic fromAtomic){
-  // Trivial cases:
-  if(fromAtomic <= 0 || fromAtomic-1 == 0){
-    return 0;
-  }
-  
 }
 
 /**
@@ -497,16 +584,65 @@ int getCurrentTotalSize(Sequence *sequence){
   return i;
 }
 
+Position backtrackToFirstAtomicInLine(Sequence *sequence, Position position) {
+  if (position < 0) {
+    ERR_PRINT("backtrackToFirstAtomicInLine called with negative position.\n");
+    return -1;
+  } else if (position == 0 && sequence->pieceTable.first->next_ptr != sequence->pieceTable.last) {
+    return 0; // Postion is already at the start of the (non-empty) sequence
+  }
+
+  NodeResult nodeResult = getNodeForPosition(sequence, position - 1);
+  DescriptorNode* currNode = nodeResult.node;
+  int offsetInNode = position - 1 - nodeResult.startPosition;
+
+  if (currNode == NULL || currNode == sequence->pieceTable.last
+      || (currNode->next_ptr == sequence->pieceTable.last && offsetInNode == currNode->size - 1)) {
+    ERR_PRINT("Position %d out of bounds in backtrackToFirstAtomicInLine.\n", position);
+    return -1;
+  }
+
+  Position currentPosition = position; // This is always one before the current offsetInNode
+  Atomic *buffer = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+  LineBidentifier lineBreakId = getCurrentLineBidentifier();
+  
+  while (currNode != sequence->pieceTable.first) {
+    // Iterate over the characters in the current node backwards
+    while (offsetInNode >= 0) {
+      if (buffer[currNode->offset + offsetInNode] == lineBreakId) {
+        return currentPosition; // Found the start of the line
+      }
+      offsetInNode--;
+      currentPosition--;
+    }
+
+    // Move to the previous node
+    currNode = currNode->prev_ptr;
+    offsetInNode = currNode->size - 1;
+    buffer = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+  }
+
+  return 0; // If we reach this, we are at the first node, so return 0
+}
+
 /*
 =========================
   Write/Edit
 =========================
 */
 
-ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert ){
+ReturnCode insert(Sequence *sequence, Position position, wchar_t *textToInsert) {
+  return insertUndoOption(sequence, position, textToInsert, NULL);
+}
+
+/**
+ * Insertion with the option to link to a previous operation for bundled undo.
+ */
+ReturnCode insertUndoOption(Sequence *sequence, Position position, wchar_t *textToInsert, Operation *previousOperation) {
   DEBG_PRINT("[Trace]: Inserting at atomic:%d\n",position);
   if (sequence == NULL || textToInsert == NULL || position < 0){
-    return -1; // Error
+    ERR_PRINT("Insert with invalid sequence, textToInsert, or position.\n");
+    return -1;
   }
 
   int atomicSizeOfInsertion = -1;
@@ -518,6 +654,12 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
     return -1;
   } 
 
+  // Make cache invalid if necessary
+  if (position <= sequence->lastLineResult.foundPosition) {
+    sequence->lastLineResult.foundPosition = -1; 
+    sequence->lastLineResult.lineNumber = -1;
+  } 
+
   // Store previous statistics for undo
   int prevWordCount = sequence->wordCount;
   int prevLineCount = sequence->lineCount;
@@ -527,9 +669,10 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
     sequence->lineCount++;
   }
 
-  // Optimization case: if insert at last insert (and buffer) +1 position simply extend node to hold new insert as well.
-  DEBG_PRINT("cond1:%d , cond2: %d",(position == _lastInsert._lastAtomicPos + _lastInsert._lastCharSize), (newlyWrittenBufferOffset == _lastInsert._lastWritePos +  _lastInsert._lastCharSize));
-  if( (position == _lastInsert._lastAtomicPos + _lastInsert._lastCharSize) && (newlyWrittenBufferOffset == _lastInsert._lastWritePos +  _lastInsert._lastCharSize)){
+  // Optimization case: if insert at last insert (and buffer) +1 position, simply extend node to hold new insert as well.
+  LastInsert lastInsert = sequence->lastInsert;
+  if (position == lastInsert.lastAtomicPos + lastInsert.lastCharSize 
+    && newlyWrittenBufferOffset == lastInsert.lastWritePos +  lastInsert.lastCharSize){
     NodeResult toExtend = getNodeForPosition(sequence, position-1);
 
     // Ensure not operating in invalid node...
@@ -555,28 +698,23 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
       operation->optimizedCaseSize = byteSize;
       operation->wordCount = prevWordCount;
       operation->lineCount = prevLineCount;
+      operation->previous = previousOperation; // Link to the previous operation if any
       operation->oldNext = NULL; // Not used in optimized case
       operation->last = NULL;
       operation->oldPrev = NULL; 
       if (pushOperation(sequence->undoStack, operation) == 0) {
-        ERR_PRINT("Failed to push operation onto undo stack.\n");
+        ERR_PRINT("Failed to push insert operation onto undo stack.\n");
         free(operation);
         return -1; // Error
       }
 
       // Save this insert's properties for comparison at next insert.
-      _lastInsert._lastAtomicPos = position;
-      _lastInsert._lastWritePos = newlyWrittenBufferOffset;
-      _lastInsert._lastCharSize = atomicSizeOfInsertion;
+      sequence->lastInsert.lastAtomicPos = position;
+      sequence->lastInsert.lastWritePos = newlyWrittenBufferOffset;
+      sequence->lastInsert.lastCharSize = atomicSizeOfInsertion;
       return 1;
     }
   }
-  // Save this insert's properties for comparison at next insert.
-  DEBG_PRINT("Insert saved with size!%d, buffOfs:%d, atomPos:%d.\n", atomicSizeOfInsertion, newlyWrittenBufferOffset, position);
-  _lastInsert._lastAtomicPos = position;
-  _lastInsert._lastWritePos = newlyWrittenBufferOffset;
-  _lastInsert._lastCharSize = atomicSizeOfInsertion;
-
 
   // Otherwise create a new node for the inserted text
   DescriptorNode* newInsert = (DescriptorNode*) malloc(sizeof(DescriptorNode));
@@ -590,7 +728,6 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
 
   // Find the node for the given position
   NodeResult nodeResult = getNodeForPosition(sequence, position);
-  DEBG_PRINT("Node for position %d found at start position %d.\n", position, nodeResult.startPosition);
 
   // Insert the new node into the piece table
   if (nodeResult.startPosition == position){
@@ -599,13 +736,13 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
 
     DescriptorNode* next = nodeResult.node;
     if (next == NULL) {
-      ERR_PRINT("Fatal error: next node is NULL!\n");
+      ERR_PRINT("Next node for insert is NULL!\n");
       free(newInsert);
       return -1; // Error: Invalid state
     }
     DescriptorNode* prev = next->prev_ptr;
     if (prev == NULL) {
-      ERR_PRINT("Fatal error: previous node is NULL!\n");
+      ERR_PRINT("Previous node for insert is NULL!\n");
       free(newInsert);
       return -1; // Error: Invalid state
     }
@@ -623,10 +760,11 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
     operation->oldPrev = prev;
     operation->wordCount = prevWordCount;
     operation->lineCount = prevLineCount;
+    operation->previous = previousOperation; // Link to the previous operation if any
     operation->optimizedCase = 0; // Not an optimized case
     operation->optimizedCaseSize = 0; // Not used in this case
     if (pushOperation(sequence->undoStack, operation) == 0) {
-      ERR_PRINT("Failed to push operation onto undo stack.\n");
+      ERR_PRINT("Failed to push insert operation onto undo stack.\n");
       free(newInsert);
       free(operation);
       return -1; // Error
@@ -649,7 +787,7 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
     // Split the existing node into two parts
     DescriptorNode* foundNode = nodeResult.node;
     if (foundNode == NULL){
-      ERR_PRINT("Fatal error: found node is NULL!\n");
+      ERR_PRINT("No node found for insert at given position!\n");
       free(newInsert);
       return -1; // Error: Invalid state
     }
@@ -682,10 +820,11 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
     operation->oldPrev = foundNode;
     operation->wordCount = prevWordCount;
     operation->lineCount = prevLineCount;
+    operation->previous = previousOperation; // Link to the previous operation if any
     operation->optimizedCase = 0; // Not an optimized case
     operation->optimizedCaseSize = 0; // Not used in this case
     if (pushOperation(sequence->undoStack, operation) == 0) {
-      ERR_PRINT("Failed to push operation onto undo stack.\n");
+      ERR_PRINT("Failed to push insert operation onto undo stack.\n");
       free(newInsert);
       free(firstPart);
       free(seccondPart);
@@ -721,13 +860,25 @@ ReturnCode insert( Sequence *sequence, Position position, wchar_t *textToInsert 
   sequence->wordCount += stats.totalWords;
   sequence->lineCount += stats.totalLineBreaks;
 
+  // Save this insert's properties for comparison at next insert.
+  sequence->lastInsert.lastAtomicPos = position;
+  sequence->lastInsert.lastWritePos = newlyWrittenBufferOffset;
+  sequence->lastInsert.lastCharSize = atomicSizeOfInsertion;
+
   return 1;
 }
 
-ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosition ){
+ReturnCode delete(Sequence *sequence, Position beginPosition, Position endPosition) {
+  return deleteUndoOption(sequence, beginPosition, endPosition, NULL);
+}
+
+/**
+ * Delete with the option to link to a previous operation for bundled undo.
+ */
+ReturnCode deleteUndoOption(Sequence *sequence, Position beginPosition, Position endPosition, Operation *previousOperation) {
   if (sequence == NULL || beginPosition < 0 || endPosition < beginPosition) {
+    ERR_PRINT("Delete with invalid sequence, beginPosition, or endPosition.\n");
     return -1; // Error
-    ERR_PRINT("Delete failed at security check.\n");
   }
 
   // Find the nodes for the given positions and check if a deletion is possible there
@@ -737,7 +888,7 @@ ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosit
   DescriptorNode* endNode = endNodeResult.node;
   if (startNode == NULL || startNode == sequence->pieceTable.last 
     || endNode == NULL || endNode == sequence->pieceTable.last) {
-    ERR_PRINT("Fatal error: No node found at given position!\n");
+    ERR_PRINT("No node found for delete at given positions!\n");
     return -1;
   }
   int distanceInStartBlock = beginPosition - startNodeResult.startPosition;
@@ -748,6 +899,15 @@ ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosit
     ERR_PRINT("Delete failed: Attempted delete at continuation byte!\n");
     return -1;
   }
+
+  // Make cache invalid if necessary
+  if (beginPosition <= sequence->lastLineResult.foundPosition) {
+    sequence->lastLineResult.foundPosition = -1; 
+    sequence->lastLineResult.lineNumber = -1;
+  } 
+  sequence->lastInsert.lastAtomicPos = -1;
+  sequence->lastInsert.lastWritePos = -1;
+  sequence->lastInsert.lastCharSize = -1;
 
   // Get the statistics effect of the deletion
   TextStatistics stats = calculateStatsEffect(sequence, startNode, distanceInStartBlock, endNode, distanceInEndBlock, getCurrentLineBidentifier());
@@ -764,10 +924,11 @@ ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosit
   operation->oldPrev = endNode;
   operation->wordCount = sequence->wordCount;
   operation->lineCount = sequence->lineCount;
+  operation->previous = previousOperation; // Link to the previous operation if any
   operation->optimizedCase = 0; // Not an optimized case
   operation->optimizedCaseSize = 0; // Not used in this case
   if (pushOperation(sequence->undoStack, operation) == 0) {
-    ERR_PRINT("Failed to push operation onto undo stack.\n");
+    ERR_PRINT("Failed to push delete operation onto undo stack.\n");
     free(operation);
     return -1; // Error
   }
@@ -829,10 +990,107 @@ ReturnCode delete( Sequence *sequence, Position beginPosition, Position endPosit
   return 1;
 }
 
+SearchResult find(Sequence *sequence, wchar_t *textToFind, Position startPosition) {
+  SearchResult result = {-1, -1}; // Initialize with invalid values
+  if (sequence == NULL || textToFind == NULL || startPosition < 0) {
+    ERR_PRINT("Find called with invalid sequence, textToFind, or startPosition.\n");
+    return result; // Error
+  }
+
+  NodeResult startNode = getNodeForPosition(sequence, startPosition);
+  if (startNode.node == NULL || wcslen(textToFind) == 0) {
+    ERR_PRINT("Position %d out of bounds or empty search text for find.\n", startPosition);
+    return result;
+  }
+
+  // Convert wcstring to UTF-8
+  size_t needleLength = getUtf8ByteSize(textToFind);
+  Atomic *needle = malloc(needleLength * sizeof(Atomic));
+  if (needle == NULL) {
+    ERR_PRINT("Error: Memory allocation failed for needle.\n");
+    return result;
+  }
+  wcstombs(needle, textToFind, needleLength);
+
+  Position currentPosition = startPosition;
+  DescriptorNode* currNode = startNode.node;
+  Atomic *data = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+  int offsetInNode = startPosition - startNode.startPosition;
+  int endTraversed = 0; // Flag to indicate if the end of the piece table has been reached
+  int countedLineBreaks = 0; // Keep track of line breaks on the way
+  LineBidentifier lineBreakId = getCurrentLineBidentifier();
+
+  // Search until we are back at the start position
+  while (!endTraversed || currentPosition < startPosition) {
+    // Go back to the beginning of the piece table if the end was reached
+    if (currNode == sequence->pieceTable.last) {
+      DEBG_PRINT("Find has reached the end of the piece table, going back to start.\n");
+      endTraversed = 1;
+      currentPosition = 0;
+      countedLineBreaks = 0;
+      offsetInNode = 0;
+      currNode = sequence->pieceTable.first->next_ptr;
+      data = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+      continue;
+    }
+
+    // Check if the current node contains a match
+    while (offsetInNode < currNode->size) {
+      if (data[currNode->offset + offsetInNode] == lineBreakId) {
+        countedLineBreaks++;
+      }
+      if (textMatchesBuffer(sequence, currNode, offsetInNode, needle, needleLength)) { // Match found
+        result.foundPosition = currentPosition;
+        if (endTraversed || startPosition == 0) {
+          result.lineNumber = countedLineBreaks + 1; // We can assume that there exists at least one line, otherwise there will be no match
+        } else {
+          // We only have to get the line number before startPosition (which is faster to do)
+          result.lineNumber = getLineNumber(sequence, startPosition - 1) + countedLineBreaks;
+        }
+        // Update cached last line result
+        sequence->lastLineResult.foundPosition = result.foundPosition; 
+        sequence->lastLineResult.lineNumber = result.lineNumber; 
+        return result;
+      }
+      currentPosition++;
+      offsetInNode++;
+    }
+
+    // Otherwise move to the next node
+    currNode = currNode->next_ptr;
+    data = currNode->isInFileBuffer ? sequence->fileBuffer.data : sequence->addBuffer.data;
+    offsetInNode = 0; // Reset offset for the next node
+  }
+
+  return result; // No match found
+}  
+
+SearchResult findAndReplace(Sequence *sequence, wchar_t *textToFind, wchar_t *textToReplace, Position startPosition) {
+  SearchResult result = find(sequence, textToFind, startPosition);
+
+  if (result.foundPosition != -1) { // Match found
+    DEBG_PRINT("Found match at position %d, replacing with '%ls'.\n", result.foundPosition, textToReplace);
+    ReturnCode deleteResult = deleteUndoOption(sequence, result.foundPosition, result.foundPosition + getUtf8ByteSize(textToFind) - 1, NULL);
+
+    if (deleteResult == 1) {
+      Operation *previousOperation = getOperation(sequence->undoStack);
+      ReturnCode insertResult = insertUndoOption(sequence, result.foundPosition, textToReplace, previousOperation);
+      if (insertResult == 1) {
+        return result; // Return the search result with the found position and line number
+      } else {
+        ERR_PRINT("Replace: Insert after delete failed.\n");
+        undo(sequence); // Undo the delete operation if insert fails
+      }
+    } else {
+      ERR_PRINT("Replace: Delete before insert failed.\n");
+    }
+  }
+}
+
 /*
-=============
+=========================
   Debug Utils
-=============
+=========================
 */
 
 void debugPrintInternalState(Sequence* sequence, bool showAddBuff, bool showFileBuff){

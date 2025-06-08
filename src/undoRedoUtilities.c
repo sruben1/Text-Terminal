@@ -1,6 +1,7 @@
 #include "undoRedoUtilities.h"
 #include "debugUtil.h"
 
+/*------ Data structures for internal use ------*/
 typedef struct OperationNode OperationNode;
 struct OperationNode {
     Operation *operation;
@@ -20,11 +21,11 @@ typedef struct OperationStack {
 
 /**
  * Helper function to undo an operation.
- * This function should handle the logic of restoring the piece table
- * Due to symmetry, this function can be used for both undo and redo operations.
- * Returns the inverse operation or NULL if the operation cannot be undone.
+ * This function should handle the logic of restoring the piece table.
+ * Due to symmetry, it can be used for both undoing and redoing operations.
+ * Returns the inverse operation that can be used to redo the operation or NULL if an error occurs.
  */
-Operation* undoOperation(Sequence *sequence, Operation *operation) {
+Operation* undoOperation(Sequence *sequence, Operation *operation, Operation *nextInverse) {
     // Get the nodes at the start and end of the operation
     DescriptorNode *first = operation->first;
     DescriptorNode *oldNext = operation->oldNext;
@@ -35,6 +36,13 @@ Operation* undoOperation(Sequence *sequence, Operation *operation) {
     int optimizedCase = operation->optimizedCase;
     unsigned long optimizedCaseSize = operation->optimizedCaseSize;
     free(operation); 
+
+    // Make cache invalid
+    sequence->lastLineResult.foundPosition = -1; 
+    sequence->lastLineResult.lineNumber = -1;
+    sequence->lastInsert.lastAtomicPos = -1;
+    sequence->lastInsert.lastWritePos = -1;
+    sequence->lastInsert.lastCharSize = -1;
 
     if (optimizedCase) {
         // Handle optimized case where the operation is just an extension of a node
@@ -57,6 +65,7 @@ Operation* undoOperation(Sequence *sequence, Operation *operation) {
         inverse->oldPrev = NULL;
         inverse->wordCount = sequence->wordCount;
         inverse->lineCount = sequence->lineCount;
+        inverse->previous = nextInverse; // Link to the next inverse operation
         inverse->optimizedCase = 1; // Indicate this is an optimized case
         inverse->optimizedCaseSize = -optimizedCaseSize; // Negative to revert the size change
         
@@ -84,6 +93,7 @@ Operation* undoOperation(Sequence *sequence, Operation *operation) {
     inverse->oldPrev = last->prev_ptr;
     inverse->wordCount = sequence->wordCount;
     inverse->lineCount = sequence->lineCount;
+    inverse->previous = nextInverse; // Link to the next inverse operation
     inverse->optimizedCase = 0; // Not an optimized case
     inverse->optimizedCaseSize = 0; // Not used in this case
 
@@ -105,62 +115,90 @@ Operation* undoOperation(Sequence *sequence, Operation *operation) {
 */
 
 ReturnCode undo(Sequence *sequence) {
-    // Get undo stack and last operation
+    // Get undo & redo stacks
     OperationStack *undoStack = sequence->undoStack;
     if (undoStack == NULL || undoStack->size == 0) {
         ERR_PRINT("Undo stack is empty or NULL.\n");
         return 0; // Undefined
     }
+    OperationStack *redoStack = sequence->redoStack;
+    if (redoStack == NULL) {
+        ERR_PRINT("Redo stack is NULL.\n");
+        return 0; // Undefined
+    }
+
+    // Pop the last operation from the undo stack
     Operation *operation = popOperation(undoStack);
     if (operation == NULL) {
         ERR_PRINT("Failed to pop operation from undo stack.\n");
         return 0; // Undefined
     }
 
-    Operation* inverse = undoOperation(sequence, operation);
+    Operation *previousOperation;
+    Operation *inverse = NULL;
+    while(operation != NULL) { // Iterate through the bundle of operations     
+        previousOperation = operation->previous; // Save the next operation in the bundle
 
-    // Update the redo stack
-    OperationStack *redoStack = sequence->redoStack;
-    if (redoStack == NULL) {
-        ERR_PRINT("Redo stack is NULL.\n");
-        free(inverse);
-        return 0; // Undefined
-    }
-    if (pushOperation(redoStack, inverse) == 0) {
-        ERR_PRINT("Failed to push operation onto redo stack.\n");
-        free(inverse);
-        return 0; // Undefined
+        // Undo the operation and get the inverse operation
+        inverse = undoOperation(sequence, operation, inverse);
+        if (inverse == NULL) {
+            ERR_PRINT("Failed to undo operation.\n");
+            return 0; // Undefined
+        }
+
+        // Push the inverse operation onto the redo stack
+        if (pushOperation(redoStack, inverse) == 0) {
+            ERR_PRINT("Failed to push operation onto redo stack.\n");
+            free(inverse);
+            return 0; // Undefined
+        }
+
+        operation = previousOperation; // Move to the next operation of the bundle
     }
 
     return 1; // Success
 }
 
 ReturnCode redo(Sequence *sequence) {
-    // Get redo stack and last operation
+    // Get redo & undo stacks
     OperationStack *redoStack = sequence->redoStack;
     if (redoStack == NULL || redoStack->size == 0) {
         ERR_PRINT("Redo stack is empty or NULL.\n");
         return 0; // Undefined
     }
+    OperationStack *undoStack = sequence->undoStack;
+    if (undoStack == NULL) {
+        ERR_PRINT("Undo stack is NULL.\n");
+        return 0; // Undefined
+    }
+
+    // Pop the last operation from the redo stack
     Operation *operation = popOperation(redoStack);
     if (operation == NULL) {
         ERR_PRINT("Failed to pop operation from redo stack.\n");
         return 0; // Undefined
     }
 
-    Operation* inverse = undoOperation(sequence, operation);
+    Operation *previousOperation;
+    Operation *inverse = NULL;
+    while(operation != NULL) { // Iterate through the bundle of operations     
+        previousOperation = operation->previous; // Save the next operation in the bundle
 
-    // Update the undo stack
-    OperationStack *undoStack = sequence->undoStack;
-    if (undoStack == NULL) {
-        ERR_PRINT("Undo stack is NULL.\n");
-        free(inverse);
-        return 0; // Undefined
-    }
-    if (pushOperation(undoStack, inverse) == 0) {
-        ERR_PRINT("Failed to push operation onto undo stack.\n");
-        free(inverse);
-        return 0; // Undefined
+        // Undo the operation and get the inverse operation
+        inverse = undoOperation(sequence, operation, inverse);
+        if (inverse == NULL) {
+            ERR_PRINT("Failed to undo operation.\n");
+            return 0; // Undefined
+        }
+
+        // Push the inverse operation onto the undo stack
+        if (pushOperation(undoStack, inverse) == 0) {
+            ERR_PRINT("Failed to push operation onto undo stack.\n");
+            free(inverse);
+            return 0; // Undefined
+        }
+
+        operation = previousOperation; // Move to the next operation of the bundle
     }
 
     return 1; // Success
@@ -203,6 +241,15 @@ ReturnCode pushOperation(OperationStack *stack, Operation *operation) {
     return 1; // Success
 }
 
+Operation* getOperation(OperationStack *stack) {
+    if (stack == NULL || stack->top == NULL) {
+        ERR_PRINT("Cannot get operation from an empty or NULL stack.\n");
+        return NULL;
+    }
+    
+    return stack->top->operation; // Return the operation at the top of the stack without removing it
+}
+
 Operation* popOperation(OperationStack *stack) {
     if (stack == NULL || stack->top == NULL) {
         ERR_PRINT("Cannot pop operation from an empty or NULL stack.\n");
@@ -234,8 +281,16 @@ ReturnCode freeOperationStack(OperationStack *stack) {
     OperationNode *current = stack->top;
     while (current != NULL) {
         OperationNode *nextNode = current->next;
-        free(current->operation); // Assuming operation needs to be freed
-        free(current);
+
+        // Free the bundle of operations
+        Operation *operation = current->operation;
+        while (operation != NULL) {
+            Operation *previousOperation = operation->previous;
+            free(operation);
+            operation = previousOperation;
+        }
+
+        free(current); // Free the node itself
         current = nextNode;
     }
     

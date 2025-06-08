@@ -10,6 +10,10 @@
 *.log
 *.aux
 *.synctex.gz
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
 
 # Object files
 *.o
