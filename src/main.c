@@ -229,7 +229,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                         sinceHorizScrollCounter = 0;
                         DEBG_PRINT("horiz scroll change registered: %d\n", horizontalScroll);
                     }
-                    if (nbrOfUtf8CharsNoControlCharsInLine + nbrOfUtf8CharsNoControlChars > horizontalScroll){ 
+                    if ((nbrOfUtf8CharsNoControlCharsInLine + nbrOfUtf8CharsNoControlChars) > horizontalScroll){ 
                         mvwaddwstr(stdscr, currLineBcount, sinceHorizScrollCounter, lineToPrint + horizontalScroll);
                         DEBG_PRINT("Printing line/block %ls\n", lineToPrint);
                         mvwaddwstr(stdscr, currLineBcount, nbrOfUtf8CharsNoControlCharsInLine, lineToPrint + horizontalScroll);
@@ -414,21 +414,18 @@ void init_buttons() {
     
     // Save button
     buttons[0].x = start_x;
-    buttons[0].y = lastGuiHeight - 1;
     buttons[0].width = BUTTON_SAVE_WIDTH;
     buttons[0].label = "Save";
     buttons[0].pressed = false;
     
     // Search button  
     buttons[1].x = start_x + BUTTON_SAVE_WIDTH + BUTTON_SPACING;
-    buttons[1].y = lastGuiHeight - 1;
     buttons[1].width = BUTTON_SEARCH_WIDTH;
     buttons[1].label = "Search";
     buttons[1].pressed = false;
     
     // S&R button
     buttons[2].x = start_x + BUTTON_SAVE_WIDTH + BUTTON_SPACING + BUTTON_SEARCH_WIDTH + BUTTON_SPACING;
-    buttons[2].y = lastGuiHeight - 1;
     buttons[2].width = BUTTON_SR_WIDTH;
     buttons[2].label = "S&R";
     buttons[2].pressed = false;
@@ -445,7 +442,7 @@ void draw_buttons() {
         }
         
         // Draw button background
-        mvprintw(buttons[i].y, buttons[i].x, "[%s]", buttons[i].label);
+        mvprintw(lastGuiHeight-1, buttons[i].x, "[%s]", buttons[i].label);
         
         if (buttons[i].pressed) {
             attroff(A_REVERSE);
@@ -572,7 +569,7 @@ void draw_menu_interface() {
 
 int check_button_click(int mouse_x, int mouse_y) {
     for (int i = 0; i < 3; i++) {
-        if (mouse_y == buttons[i].y && 
+        if (mouse_y == lastGuiHeight-1 && 
             mouse_x >= buttons[i].x && 
             mouse_x <= buttons[i].x + buttons[i].width + 1) { // +1 for brackets
             return i;
@@ -1163,6 +1160,7 @@ if (status == OK && wch == CTRL_KEY('y')) {
                             
                             buttons[button_clicked].pressed = false;
                             handle_button_press(button_clicked);
+                            button_clicked = -1;
                             updateCursorAndMenu();
                         }
                         else if (event.y < lastGuiHeight - MENU_HEIGHT) {
@@ -1170,7 +1168,6 @@ if (status == OK && wch == CTRL_KEY('y')) {
                             currMenuState = NOT_IN_MENU;
                             // Text cursor case:
                             relocateAndupdateCursorAndMenu(event.x, event.y);
-                            autoAdjustHorizontalScrolling(false);
                         }  else{
                             // Menu interactions case:
 
@@ -1179,7 +1176,6 @@ if (status == OK && wch == CTRL_KEY('y')) {
                     else if (event.bstate & BUTTON1_DOUBLE_CLICKED) {
                         DEBG_PRINT("Drag ended at: X:%d Y:%d", event.x, event.y);
                         relocateRangeEndAndUpdate(event.x, event.y);
-                        autoAdjustHorizontalScrolling(true);
                     }
                 }
                 break;
@@ -1790,7 +1786,6 @@ void getCurrentSelectionRang(int* rtStartX, int* rtEndX, int* rtStartY, int* rtE
  */
 void updateCursorAndMenu(){
     // Update stats in GUI and if needed repaint the range...
-
     // Remove previous range display:
     for (int y = 0; y <= lastGuiHeight; y++){
         mvchgat(y, 0, -1, A_NORMAL, 0, NULL); // -1 signifies: till end of gui line
@@ -1803,6 +1798,7 @@ void updateCursorAndMenu(){
         int horizOffs = getCurrHorizontalScrollOffset();
 
         if (lastGuiHeight >= MENU_HEIGHT) {
+            DEBG_PRINT("Menu update1\n");
             // Clear the status line first
             move(lastGuiHeight - 1, 0);
             clrtoeol();// Clear rest of status line
@@ -1810,9 +1806,7 @@ void updateCursorAndMenu(){
             // Draw buttons first
             draw_buttons();
             
-            // Then draw status text after the buttons
-            int status_x =  0;
-            mvprintw(lastGuiHeight - 2, status_x, 0, "Ln %d, Col %d || %d words, %d lines || Ctrl-l to quit", cursorY + horizOffs + 1, cursorX + horizOffs + 1, getCurrentWordCount(activeSequence), getCurrentLineCount(activeSequence));
+            mvprintw(lastGuiHeight - 2, 0, "Ln %d, Col %d || %d words, %d lines || Ctrl-l to quit", cursorY + horizOffs + 1, cursorX + horizOffs + 1, getCurrentWordCount(activeSequence), getCurrentLineCount(activeSequence));
         }
     } else {
         autoAdjustHorizontalScrolling(true);
@@ -1830,6 +1824,7 @@ void updateCursorAndMenu(){
         }
         
         if (lastGuiHeight >= MENU_HEIGHT) {
+            DEBG_PRINT("Menu update2\n");
             move(lastGuiHeight - 1, 0);
             clrtoeol();
             
@@ -1840,7 +1835,7 @@ void updateCursorAndMenu(){
             if (currMenuState == NOT_IN_MENU) {
                 int horizOffs = getCurrHorizontalScrollOffset();
                 int status_x = buttons[2].x + buttons[2].width + 10;
-                mvprintw(lastGuiHeight - 2, status_x, "Ln %d-%d, Col %d-%d || %d words, %d lines || Ctrl-l to quit", cursorY + horizOffs + 1, cursorEndY + horizOffs +1, cursorX + horizOffs + 1, cursorEndX + horizOffs +1, getCurrentWordCount(activeSequence), getCurrentLineCount(activeSequence));
+                mvprintw(lastGuiHeight - 2, 0, "Ln %d-%d, Col %d-%d || %d words, %d lines || Ctrl-l to quit", cursorY + horizOffs + 1, cursorEndY + horizOffs +1, cursorX + horizOffs + 1, cursorEndX + horizOffs +1, getCurrentWordCount(activeSequence), getCurrentLineCount(activeSequence));
             }
 
         }
