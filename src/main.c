@@ -1483,7 +1483,7 @@ void changeScrolling(int incrY, bool enterKey){
             } else if (incrY > 0 && enterKey == false) {
                 // Scroll down
                 DEBG_PRINT("changeScrolling scroll down\n");
-                if (cursorY > 0) {
+                if (0 < visibleLines) {
                     screenTopLine++;
                     cursorY--;
                     cursorEndY--;
