@@ -416,7 +416,7 @@ ReturnCode writeSequenceToMapping(Atomic* writeMapping, size_t newSize, size_t n
 void closeAllFileResources(Sequence *seq){
   // Unmap temp copy
   if(_internalOriginalFileCopyFd >= 0){
-    munmap(_internalOriginalFileCopyFd, seq->fileBuffer.capacity);
+    munmap(seq->fileBuffer.data, seq->fileBuffer.capacity);
   }
 
   // Unmap read/write

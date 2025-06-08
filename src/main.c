@@ -231,7 +231,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                         mvwaddwstr(stdscr, currLineBcount, sinceHorizScrollCounter, lineToPrint + horizontalScroll);
                         DEBG_PRINT("Printing line/block %ls\n", lineToPrint);
                         mvwaddwstr(stdscr, currLineBcount, nbrOfUtf8CharsNoControlCharsInLine, lineToPrint + horizontalScroll);
-                    } {
+                    } else {
                         DEBG_PRINT("skipping print due to horiz scroll:  %d < %d + %d\n", horizontalScroll, nbrOfUtf8CharsNoControlCharsInLine, nbrOfUtf8CharsNoControlChars);
                     }
 
