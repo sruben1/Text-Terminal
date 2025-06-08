@@ -65,6 +65,11 @@ ReturnCode setLineStatsNotUpdated();
 ReturnCode updateLine(int relativeLineNumber, int absoluteGeneralAtomicPosition , int nbrOfUtf8CNoControlChars);
 
 /**
+ * Get Line number at the top of the screen.
+ */
+int gettopMostLineNbr();
+
+/**
  * Function to call when scrolling.
  *  requires full update of statistics afterwards since operation invalidates internal state.
  */

@@ -71,7 +71,7 @@ void close_editor(void);
 void checkSizeChanged(void);
 void process_input(void);
 bool is_printable_unicode(wint_t wch);
-void changeScrolling(int incrY, bool enterKey);
+void changeScrolling(int incrY);
 
 // Regular cursor mode:
 void changeAndupdateCursorAndMenu(int incrX, int incrY);
@@ -1222,11 +1222,11 @@ if (status == OK && wch == CTRL_KEY('y')) {
                 break;
             case KEY_NPAGE: // Page up as select up
                 //changeRangeEndAndUpdate(0,1);
-                changeScrolling(1, false);
+                changeScrolling(1);
                 break;
             case KEY_PPAGE: // Page down as select down
                 //changeRangeEndAndUpdate(0,-1);
-                changeScrolling(-1, false);
+                changeScrolling(-1);
                 break;
              /*---- Backspace & Delete ----*/
             case KEY_BACKSPACE: // Backspace
@@ -1398,7 +1398,6 @@ if (status == OK && wch == CTRL_KEY('y')) {
                         cursorX = 0;
                         cursorY++;
                         resetRangeSelectionState();
-                        //changeScrolling(1, true);
                         DEBG_PRINT("After Enter: cursor moved to (%d, %d)\n", cursorY, cursorX);
                     } else {
                         ERR_PRINT("Failed to insert line break\n");
@@ -1460,8 +1459,8 @@ if (status == OK && wch == CTRL_KEY('y')) {
 */
 
 // Handle vertical scrolling
-void changeScrolling(int incrY, bool enterKey){
-    int newY = cursorY + incrY;
+void changeScrolling(int incrY){
+    screenTopLine = gettopMostLineNbr;
 
     if (incrY != 0) {
         DEBG_PRINT("changeScrolling in if statement (incrY != 0)\n");
@@ -1472,42 +1471,26 @@ void changeScrolling(int incrY, bool enterKey){
         int visibleLines = lastGuiHeight - MENU_HEIGHT; // Lines on screen
         if (visibleLines < 0) {
             // Not enough space for text display
-            newY = 0;
         } else {
             if (incrY < 0) {
                 // Scroll up
                 DEBG_PRINT("changeScrolling scroll up\n");
                 if (screenTopLine > 0) { // Can't scroll up further when at the very top
-                    screenTopLine--;
                     cursorY++;
                     cursorEndY++;
                     moveAbsoluteLineNumbers(activeSequence, -1);
-                    newY = 0;
                     refreshFlag = true;
-                } else {
-                    newY = 0;
                 }
-            } else if (incrY > 0 && enterKey == false) {
+            } else if (incrY > 0) {
                 // Scroll down
                 DEBG_PRINT("changeScrolling scroll down\n");
                 if (0 < visibleLines) {
-                    screenTopLine++;
                     cursorY--;
                     cursorEndY--;
                     moveAbsoluteLineNumbers(activeSequence, 1);
-                    newY = visibleLines - 1;
                     refreshFlag = true;
-                } else {
-                    newY = visibleLines - 1;
                 }
-            } //else if (enterKey == true && cursorY == visibleLines){
-                // Scroll down
-                //DEBG_PRINT("changeScrolling scroll down with enter key\n");
-                //screenTopLine++;
-                //moveAbsoluteLineNumbers(activeSequence, 1);
-                //newY = visibleLines - 1;
-                //refreshFlag = true;
-            //}
+            }
         }
     }
 }
