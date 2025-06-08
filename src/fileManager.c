@@ -185,7 +185,7 @@ ReturnCode saveSequenceToOpenFile(Sequence* sequence) {
   if(_mainFileSaveAndWriteMMAP.data != NULL && _mainFileSaveAndWriteMMAP.size == requiredSize && _mainFileSaveAndWriteMMAP.capacity == newAlignedSize){
     //Nothing to do
   } else {
-    resizeFileAndMapping(_mainFileFd, &_mainFileSaveAndWriteMMAP.data, sequence->fileBuffer.size, sequence->fileBuffer.capacity, requiredSize, newAlignedSize);
+    resizeFileAndMapping(_mainFileFd, (void**) &_mainFileSaveAndWriteMMAP.data, sequence->fileBuffer.size, sequence->fileBuffer.capacity, requiredSize, newAlignedSize);
     _mainFileSaveAndWriteMMAP.size = requiredSize;
     _mainFileSaveAndWriteMMAP.capacity = newAlignedSize;
   }

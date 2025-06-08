@@ -23,6 +23,7 @@ static bool currentlySaved = true;
 static Atomic endOfTextSignal = END_OF_TEXT_CHAR;
 
 /*------ Declarations ------ */
+ReturnCode generateStructureForFileContent(Sequence *sequence);
 NodeResult getNodeForPosition(Sequence *sequence, Position position);
 int isContinuationByte(Sequence *sequence, DescriptorNode *node, int offsetInBlock);
 int amountOfContinuationBytes(Sequence *sequence, DescriptorNode *node, int offsetInBlock);
@@ -159,7 +160,6 @@ ReturnCode closeSequence( Sequence *sequence, bool forceFlag ){
       curr = next;
     }
 
-    //TODO : free file related resources!
     closeAllFileResources(sequence);
     
     _currLineB = NO_INIT;
@@ -289,6 +289,8 @@ ReturnCode generateStructureForFileContent(Sequence *sequence){
 
 /**
  * Helper function for traversing the piece table to find the node containing text at a given position. 
+ * If the position is right after the last character of the sequence, it returns the sentinel node at the end of the piece table.
+ * On error (e.g. position out of bounds), a NodeResult with node set to NULL and startPosition set to -1 is returned.
  */
 NodeResult getNodeForPosition(Sequence *sequence, Position position){
   NodeResult result = {NULL, -1};
@@ -399,8 +401,6 @@ Position writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert, int *sizeOf
     if (sizeOfCharOrNull != NULL){
       *sizeOfCharOrNull = byteLength;
     }
-
-    // TODO: Maybe shrink the buffer if it unnecessarily large
 
     // Double the buffer's capacity if necessary
     if (sequence->addBuffer.capacity < sequence->addBuffer.size + byteLength) {

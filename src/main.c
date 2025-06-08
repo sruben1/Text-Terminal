@@ -66,10 +66,12 @@ static wchar_t secondMenuInput[MAX_MENU_INPUT] = L"";//access second menue
 
 /*======== forward declarations ========*/
 void init_editor(void);
+void init_buttons(void);
 void close_editor(void);
 void checkSizeChanged(void);
 void process_input(void);
 bool is_printable_unicode(wint_t wch);
+void changeScrolling(int incrY, bool enterKey);
 
 // Regular cursor mode:
 void changeAndupdateCursorAndMenu(int incrX, int incrY);
@@ -518,6 +520,7 @@ void draw_text_input_field(int y, int x, int width, const wchar_t* prompt, const
 }
 
 void draw_menu_interface() {
+    DEBG_PRINT("Drawing menu interface: state=%d\n", currMenuState);
     if (currMenuState == NOT_IN_MENU) return;
     
     int menu_y = lastGuiHeight - 1;  // Same line as buttons
@@ -577,6 +580,7 @@ int check_button_click(int mouse_x, int mouse_y) {
 
 
 void handle_menu_input(wint_t wch, int status) {
+    DEBG_PRINT("Menu input: state=%d, wch=%d\n", currMenuState, wch);
     if (currMenuState == NOT_IN_MENU) return;
     
     if (status == KEY_CODE_YES) {
@@ -711,7 +715,8 @@ ReturnCode pasteFromClipboard(Sequence* sequence, int cursorY, int cursorX) {
         free(wideText);
         return -1;
     }
-    
+
+    DEBG_PRINT("Pasting at position: Y=%d, X=%d\n", cursorY, cursorX);
     ReturnCode result = insert(sequence, insertPos, wideText);
     free(wideText);
     
@@ -792,7 +797,7 @@ char* getFromXclip(void) {
         return buffer;
     }
 }
- int copyYoffset = 0;
+int copyYoffset = 0;
 int copyXoffset = 0;
 ReturnCode copySelectionToClipboard(Sequence* sequence) {
     if (sequence == NULL) {
@@ -843,6 +848,8 @@ ReturnCode copySelectionToClipboard(Sequence* sequence) {
         return -1;
     }
     
+    DEBG_PRINT("Copying selection: startY=%d, startX=%d, endY=%d, endX=%d\n", startY, startX, endY, endX);
+    DEBG_PRINT("Copying selection Atomic: startPos=%d, endPos=%d\n", startPos, endPos);
     wcstombs(utf8Text, copiedText, utf8Size + 1);
     free(copiedText);
     
@@ -1483,7 +1490,7 @@ void changeScrolling(int incrY, bool enterKey){
             } else if (incrY > 0 && enterKey == false) {
                 // Scroll down
                 DEBG_PRINT("changeScrolling scroll down\n");
-                if (cursorY > 0) {
+                if (0 < visibleLines) {
                     screenTopLine++;
                     cursorY--;
                     cursorEndY--;
@@ -1552,7 +1559,7 @@ void relocateCursorNoUpdate(int newX, int newY){
             currMenuState = NOT_IN_MENU;
         }
         updateCursorAndMenu();
-        return 1;
+        return;
     }
     bool changedY = !(cursorY == newY);
     // Handle Y:
@@ -1877,6 +1884,7 @@ ReturnCode deleteCurrentSelectionRange(){
             ERR_PRINT("Failed to delete what's in selection range!\n");
             return -1;
         }
+        DEBG_PRINT("Deleting selection range: startX=%d, endX=%d, startY=%d, endY=%d\n", startX, endX, startY, endY);
         relocateCursorNoUpdate(startX, startY);
     }
     return 1;
