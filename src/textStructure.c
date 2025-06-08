@@ -23,6 +23,7 @@ static bool currentlySaved = true;
 static Atomic endOfTextSignal = END_OF_TEXT_CHAR;
 
 /*------ Declarations ------ */
+ReturnCode generateStructureForFileContent(Sequence *sequence);
 NodeResult getNodeForPosition(Sequence *sequence, Position position);
 int isContinuationByte(Sequence *sequence, DescriptorNode *node, int offsetInBlock);
 int amountOfContinuationBytes(Sequence *sequence, DescriptorNode *node, int offsetInBlock);

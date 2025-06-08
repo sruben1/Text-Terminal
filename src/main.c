@@ -66,10 +66,12 @@ static wchar_t secondMenuInput[MAX_MENU_INPUT] = L"";//access second menue
 
 /*======== forward declarations ========*/
 void init_editor(void);
+void init_buttons(void);
 void close_editor(void);
 void checkSizeChanged(void);
 void process_input(void);
 bool is_printable_unicode(wint_t wch);
+void changeScrolling(int incrY, bool enterKey);
 
 // Regular cursor mode:
 void changeAndupdateCursorAndMenu(int incrX, int incrY);
@@ -1557,7 +1559,7 @@ void relocateCursorNoUpdate(int newX, int newY){
             currMenuState = NOT_IN_MENU;
         }
         updateCursorAndMenu();
-        return 1;
+        return;
     }
     bool changedY = !(cursorY == newY);
     // Handle Y:
