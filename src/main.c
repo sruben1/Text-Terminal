@@ -480,34 +480,31 @@ void handle_button_press(int button_index) {
 }
 
 void draw_text_input_field(int y, int x, int width, const wchar_t* prompt, const wchar_t* input, int cursor_pos, bool active) {
-    attroff(A_REVERSE);  
+    // Clear the area
     mvprintw(y, x, "%*s", width + FIELD_PROMPT_WIDTH + 3, "");
     
-    // Draw 
+    // Draw prompt
     mvprintw(y, x, "%ls: ", prompt);
     int prompt_len = wcslen(prompt) + 2; 
     
+    // Draw input box brackets
     mvprintw(y, x + prompt_len, "[");
     mvprintw(y, x + prompt_len + width + 1, "]");
     
+    // Draw input text
     if (wcslen(input) > 0) {
-        // Use mvaddwstr instead of converting to multibyte
-        // This should preserve character encoding better
-        int input_start_x = x + prompt_len + 1;
-        int input_len = wcslen(input);
-        int display_len = (input_len > width) ? width : input_len;
-        
-        // Create a temporary null-terminated string for display
-        wchar_t* display_str = malloc((display_len + 1) * sizeof(wchar_t));
-        if (display_str) {
-            wcsncpy(display_str, input, display_len);
-            display_str[display_len] = L'\0';
-            
-            // Make sure we're in normal attribute mode before printing
-            attrset(A_NORMAL);
-            mvaddwstr(y, input_start_x, display_str);
-            
-            free(display_str);
+        // Convert wide string to multibyte for printing
+        size_t input_len = wcslen(input);
+        char* mb_input = malloc((input_len * 4 + 1) * sizeof(char));
+        if (mb_input) {
+            size_t converted = wcstombs(mb_input, input, input_len * 4);
+            if (converted != (size_t)-1) {
+                mb_input[converted] = '\0';
+                // Limit display to field width
+                int display_len = (strlen(mb_input) > width) ? width : strlen(mb_input);
+                mvprintw(y, x + prompt_len + 1, "%.*s", display_len, mb_input);
+            }
+            free(mb_input);
         }
     }
     
@@ -515,9 +512,6 @@ void draw_text_input_field(int y, int x, int width, const wchar_t* prompt, const
     if (active) {
         int cursor_screen_pos = cursor_pos;
         if (cursor_screen_pos > width) cursor_screen_pos = width;
-        
-        // Ensure cursor positioning doesn't interfere with attributes
-        attrset(A_NORMAL);
         move(y, x + prompt_len + 1 + cursor_screen_pos);
     }
 }
@@ -1531,37 +1525,25 @@ void relocateAndupdateCursorAndMenu(int newX, int newY){
  * Automatically jumps to next/previous line if legal to do so.  
  */
 void relocateCursorNoUpdate(int newX, int newY){
-    DEBG_PRINT("button test1\n");
     if (currMenuState != NOT_IN_MENU){
-         DEBG_PRINT("button test2\n");
 
         if(currMenuState == FIND || currMenuState == F_AND_R1){
-            DEBG_PRINT("button test3\n");
             if(newX < wcslen(firstMenuInput) && newX >= 0){
-                DEBG_PRINT("button test4\n");
                 menuCursor = newX;
             }
         } else if(currMenuState == F_AND_R2){
-            DEBG_PRINT("button test5\n");
             if(newX < wcslen(secondMenuInput) && newX >= 0){
-                DEBG_PRINT("button test6\n");
                 menuCursor = newX;
             }
         } else{
-            DEBG_PRINT("button test6\n");
             //Exit menu mode since interrupted
             currMenuState = NOT_IN_MENU;
         }
-        // REMOVED: updateCursorAndMenu(); // This was causing infinite recursion!
-        DEBG_PRINT("button test7\n");
         return;
     }
-    DEBG_PRINT("button test8\n");
     bool changedY = !(cursorY == newY);
     // Handle Y:
-    DEBG_PRINT("button test9\n");
     int amtOfRelativeLines = getTotalAmountOfRelativeLines();
-    DEBG_PRINT("button test10\n");
     if(newY < amtOfRelativeLines && newY >= 0){
         // Standard case (x handled in next big if block):
         DEBG_PRINT("Y standard case.\n");
@@ -1587,7 +1569,7 @@ void relocateCursorNoUpdate(int newX, int newY){
         ERR_PRINT("Unexpected, unhandled case in 'relocateCursor'\n");
         return;
     }
-    DEBG_PRINT("button test11\n");
+
     // Handle X (with respect to new Y): 
     int charCountAtY = getUtfNoControlCharCount(cursorY);
     if(newX <= charCountAtY && newX >= 0){
