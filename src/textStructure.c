@@ -1110,8 +1110,8 @@ void debugPrintInternalState(Sequence *sequence, bool showAddBuff, bool showFile
         if (showAddBuff && !curr->isInFileBuffer) {
             DEBG_PRINT("Offset into add buff: %ld, corresponding size: %ld.\n", curr->offset, curr->size);
         }
-        if (showFileBuff) {
-            // TODO
+        if (showFileBuff && curr->isInFileBuffer) {
+            DEBG_PRINT("Offset into file buff: %ld, corresponding size: %ld.\n", curr->offset, curr->size);
         }
         curr = curr->next_ptr;
     }
