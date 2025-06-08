@@ -71,7 +71,6 @@ int getUtfNoControlCharCount(int relativeLine){
  */
 ReturnCode setLineStatsNotUpdated(){
     DEBG_PRINT("Line stats set to invalidated.\n");
-    _portTopIdxForNext = lineStats.absolutePos[0];
     lineStats.absolutePos[0] = -1;
     return 1;
 }
@@ -96,7 +95,7 @@ ReturnCode updateLine(int relativeLineNumber, int absoluteGeneralAtomicPosition 
 ReturnCode moveAbsoluteLineNumbers(Sequence* sequence, int addOrSubstractOne){
     DEBG_PRINT("moveAbsoluteLineNumbers, initial _portTopIdxForNext: %d\n", _portTopIdxForNext);
     if (addOrSubstractOne > 0){
-        DEBG_PRINT("Moving cursor down\n");
+        DEBG_PRINT("Scrolling down\n");
         if(getTotalAmountOfRelativeLines() > 1){
             if (lineStats.absolutePos[1] != -1){
             lineStats.topMostLineNbr++;
@@ -107,7 +106,6 @@ ReturnCode moveAbsoluteLineNumbers(Sequence* sequence, int addOrSubstractOne){
             } else{
                 ERR_PRINT("Failed to scroll down, internal state issue...\n");
                 // try to recover from bad state...
-                _portTopIdxForNext = 0;
             }
             
         } else{
@@ -115,9 +113,10 @@ ReturnCode moveAbsoluteLineNumbers(Sequence* sequence, int addOrSubstractOne){
             return -1;
         }
     } else if (addOrSubstractOne < 0){
-        DEBG_PRINT("Moving cursor up\n");
+        DEBG_PRINT("Scrolling up\n");
         if (lineStats.absolutePos[0] > 0){
-            _portTopIdxForNext = backtrackToFirstAtomicInLine(sequence, lineStats.absolutePos[0]);
+            lineStats.topMostLineNbr--;
+            _portTopIdxForNext = backtrackToFirstAtomicInLine(sequence, lineStats.absolutePos[0]-1);
             DEBG_PRINT("Scroll up case _portTopIdxForNext: %d\n", _portTopIdxForNext);
         } else{
             ERR_PRINT("Scroll up illegal!\n");
@@ -177,6 +176,7 @@ ReturnCode setHorizontalScrollOffset(int newValue){
  * Special function to port in  "leap of faith" fashion an atomic index value to next printing round since line stats will be invalidated by then.
  */
 int getPrintingPortAtomicPosition(){
+    DEBG_PRINT("Requesting top idx for print, is%d\n", _portTopIdxForNext);
     return _portTopIdxForNext;
 }
 

@@ -178,8 +178,6 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                     /* Error case, lonely '\n' found despite '\r\n' current standard !*/
                     ERR_PRINT("Warning case, lonely '\n' found despite \"\r\n\" current standard !\n");
                 }
-                
-                if(currLineBcount >= screenTopLine){ // Only lines appear that are in scrolled frame
                 wchar_t* lineToPrint = utf8_to_wchar(&currentItemBlock[currentSectionStart], offsetCounter+1, nbrOfUtf8Chars);
                 if (lineToPrint == NULL){
                     ERR_PRINT("utf_8 to Wchar conversion failed! ending here!\n");
@@ -229,7 +227,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                         sinceHorizScrollCounter = 0;
                         DEBG_PRINT("horiz scroll change registered: %d\n", horizontalScroll);
                     }
-                    if ((nbrOfUtf8CharsNoControlCharsInLine + nbrOfUtf8CharsNoControlChars) > horizontalScroll){ 
+                    if (nbrOfUtf8CharsNoControlCharsInLine + nbrOfUtf8CharsNoControlChars > horizontalScroll){ 
                         mvwaddwstr(stdscr, currLineBcount, sinceHorizScrollCounter, lineToPrint + horizontalScroll);
                         DEBG_PRINT("Printing line/block %ls\n", lineToPrint);
                         mvwaddwstr(stdscr, currLineBcount, nbrOfUtf8CharsNoControlCharsInLine, lineToPrint + horizontalScroll);
@@ -241,7 +239,6 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
 
                 /* reset&setup for next block/line iteration: */
                 free(lineToPrint);
-                }
                 if ((currentItemBlock[currentSectionStart + offsetCounter] == currentLineBidentifier) || (currentItemBlock[currentSectionStart + offsetCounter] == END_OF_TEXT_CHAR)){
                     // handle this blocks line stats:
                     atomicsInLine += offsetCounter+1;
@@ -263,7 +260,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                     // Reset variables for next line:
                     atomicsInLine = 0;
                     sinceHorizScrollCounter = 0;
-                    frozenLineStart = firstAtomic + currentSectionStart + offsetCounter + 1;
+                    frozenLineStart = firstAtomic + offsetCounter + 1;
                     nbrOfUtf8CharsInLine = 0;
                     nbrOfUtf8CharsNoControlCharsInLine = 0;
                 } else{
@@ -365,7 +362,7 @@ int main(int argc, char *argv[]){
         if (activeSequence != NULL && lastGuiHeight > MENU_HEIGHT) {
             int linesToRender = lastGuiHeight - MENU_HEIGHT;
             if (linesToRender > 0) {
-                DEBG_PRINT("Refreshing text now.\n");
+                DEBG_PRINT("Refreshing text now, from atomic %d.\n", getPrintingPortAtomicPosition());
                 print_items_after(getPrintingPortAtomicPosition(), linesToRender);
             }
         }
