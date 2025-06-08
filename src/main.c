@@ -1676,6 +1676,9 @@ void relocateRangeEndAndUpdate(int newX, int newY){
  * Returns true if updated.
  */
 bool autoAdjustHorizontalScrolling(bool forEndCursor){
+    if (currMenuState != NOT_IN_MENU) {
+        return false;
+    }D
     int currHorizScroll = getCurrHorizontalScrollOffset();
     int newHorizScroll = 0;
 
@@ -1797,7 +1800,7 @@ void updateCursorAndMenu(){
         }
     } else {
         autoAdjustHorizontalScrolling(true);
-
+            
         int startX = -1, startY = -1, endX = -1, endY = -1;
         getCurrentSelectionRang(&startX, &endX, &startY, &endY);
         if (startY == endY){
