@@ -180,6 +180,20 @@ int getPrintingPortAtomicPosition(){
     return _portTopIdxForNext;
 }
 
+void debugPrintInternalLineStats(){
+    DEBG_PRINT(">>>Internal line stats<<<\n");
+    DEBG_PRINT("Top most absNbr:%d, Atomic IDX:%d\n", _portTopIdxForNext, lineStats.topMostLineNbr);
+    DEBG_PRINT("===================================\n");
+    DEBG_PRINT("||Line|scrnCharCount|absAtomicStart\n");
+    for(int i = 0; i < 74; i++){
+        DEBG_PRINT("|| %02d | %04d        | %04d\n", i, lineStats.charCount[i], lineStats.absolutePos[i]);
+        if (lineStats.absolutePos[i] == -1){
+            break;
+        }
+    }
+    DEBG_PRINT("===================================\n");
+}
+
 
 /**
  * Function to translate current screen position to (general) absolute atomic index. 
@@ -187,7 +201,7 @@ int getPrintingPortAtomicPosition(){
  */
 int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence){
     DEBG_PRINT("Calculating abs atomic index for: line%d, column%d...\n", relativeLine, charColumn);
-    
+    debugPrintInternalLineStats();
     // Check that request is valid in current data structure state: 
     for(int i = 0; i <= relativeLine; i++){
         if (lineStats.absolutePos[i] == -1){
