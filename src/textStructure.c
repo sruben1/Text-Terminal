@@ -19,7 +19,6 @@ typedef struct {
 /*------ Variables for internal use ------*/
 static LineBstd _currLineB = NO_INIT;
 static LineBidentifier _currLineBidentifier = NONE_ID;
-static int fdOfCurrentOpenFile = 0;
 static bool currentlySaved = true;
 static Atomic endOfTextSignal = END_OF_TEXT_CHAR;
 static struct _lastInsert
@@ -107,13 +106,8 @@ Sequence* empty(){
 }
 
 Sequence* loadOrCreateNewFile( char* filePath, LineBstd stdIfNewCreation){
-  if(fdOfCurrentOpenFile != 0){
-    ERR_PRINT("Error, Close currently open file first!\n");
-    fprintf(stderr, "Error, Close currently open file first!\n");
-    return NULL;
-  }
   Sequence* newSeq = empty();
-  _currLineB = initSequenceFromOpenOrCreate(filePath, newSeq, &fdOfCurrentOpenFile, stdIfNewCreation);
+  _currLineB = initSequenceFromOpenOrCreate(filePath, newSeq, stdIfNewCreation);
 
 
   if(_currLineB == NO_INIT){
@@ -165,7 +159,7 @@ ReturnCode closeSequence( Sequence *sequence, bool forceFlag ){
     }
 
     //TODO : free file related resources!
-    closeAllFileResources(sequence, fdOfCurrentOpenFile);
+    closeAllFileResources(sequence);
     
     _currLineB = NO_INIT;
     _currLineBidentifier = NONE_ID;
@@ -179,7 +173,7 @@ ReturnCode closeSequence( Sequence *sequence, bool forceFlag ){
 }
 
 ReturnCode saveSequence( Sequence *sequence){
-  saveSequenceToOpenFile(sequence, fdOfCurrentOpenFile);
+  return saveSequenceToOpenFile(sequence);
 }
 
 /*

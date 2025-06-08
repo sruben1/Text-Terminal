@@ -208,9 +208,14 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                     if(lastHorizScroll != horizontalScroll){
                         lastHorizScroll = horizontalScroll;
                         sinceHorizScrollCounter = 0;
+                        DEBG_PRINT("horiz scroll change registered: %d\n", horizontalScroll);
                     }
                     if (nbrOfUtf8CharsNoControlCharsInLine + nbrOfUtf8CharsNoControlChars > horizontalScroll){ 
                         mvwaddwstr(stdscr, currLineBcount, sinceHorizScrollCounter, lineToPrint + horizontalScroll);
+                        DEBG_PRINT("Printing line/block %ls\n", lineToPrint);
+                        mvwaddwstr(stdscr, currLineBcount, nbrOfUtf8CharsNoControlCharsInLine, lineToPrint + horizontalScroll);
+                    } {
+                        DEBG_PRINT("skipping print due to horiz scroll:  %d < %d + %d\n", horizontalScroll, nbrOfUtf8CharsNoControlCharsInLine, nbrOfUtf8CharsNoControlChars);
                     }
 
                 }
@@ -228,6 +233,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
 
 
                     if (sinceHorizScrollCounter == 0){ 
+                        DEBG_PRINT("Printed empty");
                         mvwaddwstr(stdscr, currLineBcount, 0, L"");
                     }
 
@@ -817,6 +823,8 @@ void process_input(void) {
         DEBG_PRINT("Processing SAVE.\n");
         if (saveSequence(activeSequence) > 0){
             DEBG_PRINT("Save might have succeeded.\n");
+        } else{
+            // handling?
         }
     }
 
@@ -1105,7 +1113,7 @@ void process_input(void) {
                     }
                     refreshFlag = true;
                     setLineStatsNotUpdated();
-                    debugPrintInternalState(activeSequence, true, true);
+                    //debugPrintInternalState(activeSequence, true, true);
                 }// Log unhandled case for debugging
                 else {
                     DEBG_PRINT("Ignored character input: U+%04X (decimal: %d), name %s\n", (unsigned int)wch, (int)wch, keyname(wch));

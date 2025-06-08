@@ -5,6 +5,7 @@
 #include <sys/stat.h> // To query file statistics
 #include <unistd.h> // misc. functions related t o system and I/O
 #include <sys/mman.h> // mempry map support
+#include <sys/sendfile.h> // simpler file copy
 #include <errno.h> // Error managment
 #include <signal.h> // Errors & signaling
 #include <sys/types.h> // Error handling & analysis tools
@@ -22,23 +23,30 @@
   //cpp though: https://www.sublimetext.com/blog/articles/use-mmap-with-care
 
 //internal backup to detach sequence and save file + have some recover capability 
-int _internalOriginalFileCopyFd = -1;
-int _internalSaveAndWriteFd = -1;
-Buffer _internalSaveAndWriteMMAP = {NULL, 0, 0};
+int _mainFileFd = -1; // Initalized at open
+Buffer _mainFileSaveAndWriteMMAP = {NULL, 0, 0}; // If file has some content: initially put into write buffer otherwise nothing there 
+int _internalOriginalFileCopyFd = -1; // If file has some content before opening it with TxT: copy of original state upon first save and sequence then redirected to mmap on this copy. 
+
 
 
 // Forward declarations
 /*---- Utilities ----*/
-ReturnCode writeSequenceToMapping(Atomic* writeMapping, size_t newSize, size_t newAlignedSize, const Sequence* seq);
+ReturnCode writeSequenceToMapping(Atomic* writeMapping, size_t newSize, size_t newAlignedSize, Sequence* seq);
 ReturnCode resizeFileAndMapping(int fd, void** mapping, size_t currentSize, size_t currentAlignedSize, size_t newSize, size_t newAlignedSize);
 void handler(int sig, siginfo_t *info, void *ucontext);
-ReturnCode replaceFileBufferInSeq(int *fd, size_t fileSize, Sequence *seq);
+ReturnCode replaceFileBufferInSeq(int fd, size_t fileSize, Sequence *seq);
+int simpleFileCopy(int sourceFd, int destFd,  size_t fileSize);
 
 
-LineBidentifier initSequenceFromOpenOrCreate(const char* pathname, Sequence* emptySequences, int *fileDescriptorToReturn, LineBidentifier lbStdForNewFile){
-  if ( (*fileDescriptorToReturn = open(pathname, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR /*user has Read&Write permissions*/)) < 0){ // O_RDWR flag for R&W open; O_RDONLY flag for read only
+LineBidentifier initSequenceFromOpenOrCreate(const char* pathname, Sequence* emptySequences, LineBidentifier lbStdForNewFile){
+  if(_mainFileFd >= 0){
+    ERR_PRINT("Error, Close currently open file first!\n");
+    fprintf(stderr, "Error, Close currently open file first!\n");
+    return NO_INIT;
+  }
+  if ( (_mainFileFd = open(pathname, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR /*user has Read&Write permissions*/)) < 0){ // O_RDWR flag for R&W open; O_RDONLY flag for read only
     ERR_PRINT("Failed to open file: %s!\n", strerror(errno));
-    *fileDescriptorToReturn = -1;
+    _mainFileFd = -1;
     return NO_INIT;
   }
 
@@ -55,19 +63,18 @@ LineBidentifier initSequenceFromOpenOrCreate(const char* pathname, Sequence* emp
   /*>File analysis<*/
   // get size:
   struct stat buffer;
-  if(fstat(*fileDescriptorToReturn, &buffer) < 0){
+  if(fstat(_mainFileFd, &buffer) < 0){
     ERR_PRINT("Failed to read stats form file: %s\n", strerror(errno));
     return -1;
   }
   size_t fileSize = (size_t) buffer.st_size;
 
   if (fileSize > 0){
-    if(replaceFileBufferInSeq(fileDescriptorToReturn, fileSize, emptySequences) < 0){
+    if(replaceFileBufferInSeq(_mainFileFd, fileSize, emptySequences) < 0){
       ERR_PRINT("Failed to init MMAP into sequence structure.\n");
       return -1;
     }
     DEBG_PRINT("MMAP done moving to next steps.\n");
-    _internalSaveAndWriteFd = *fileDescriptorToReturn;
 
     lbStdForNewFile = findMostLikelyLineBreakStd(emptySequences);
   } else{
@@ -80,32 +87,34 @@ LineBidentifier initSequenceFromOpenOrCreate(const char* pathname, Sequence* emp
 /**
  * Save sequence to file efficiently using memory mappings and backup to temporary files in between
  */
-ReturnCode saveSequenceToOpenFile(Sequence* sequence, int *currentFd) {
-  if ( currentFd <= 0 || !sequence) {
-    ERR_PRINT("Invalid parameters to saveSequenceToFile\n");
+ReturnCode saveSequenceToOpenFile(Sequence* sequence) {
+  if ( _mainFileFd == NULL || _mainFileFd < 0  || sequence == NULL ) {
+    ERR_PRINT("Invalid parameters to saveSequenceToFile, mainFd value:%d, seq ptr:%p\n", _mainFileFd, sequence);
     return -1;
   }
-  
+
   // Calculate required size (size for current sequence state)
-  size_t requiredSize = getCurrentTotalSize(sequence);
-  if (requiredSize <= 0) {
-    ERR_PRINT("Empty sequence or calculation failed\n");
+  size_t requiredSize = (size_t) getCurrentTotalSize(sequence);
+  DEBG_PRINT("Got SizeToSave:%d\n", requiredSize);
+  if (requiredSize < 0) {
+    ERR_PRINT("calculation failed\n");
     return -1;
   }
-  
-  // Get current file size
-  struct stat fileStat;
-  if (fstat(*currentFd, &fileStat) < 0) {
+  /* CASE of EMPTY but initial open not empty*/
+
+  struct stat mainFileStat;
+  if (fstat(_mainFileFd, &mainFileStat) < 0) {
     ERR_PRINT("Failed to get file stats: %s\n", strerror(errno));
     return -1;
   }
-  
-  /*>Special copies and preparations<*/
 
-  // Perform file Copy of file in it`s original state to keep sequence consistent
-  if (_internalOriginalFileCopyFd == -1){
+  bool skipBackup = false;
+
+
+  // >> Perform file Copy of file (of opened file, if it was not empty) in it's original state to keep sequence and piece table consistent
+  if (_internalOriginalFileCopyFd == -1 && sequence->fileBuffer.capacity != 0){
     DEBG_PRINT("Started needed orig copy...\n");
-    char backupPath[] = "/tmp/.TxTinternal-OrigState-XXXXXX";
+    char backupPath[] = "/tmp/TxTinternal-OrigState-XXXXXX";
     _internalOriginalFileCopyFd = mkstemp(backupPath);
     if (_internalOriginalFileCopyFd < 0) {
       ERR_PRINT("Failed to create copy of original file, aborting save: %s\n", strerror(errno));
@@ -113,31 +122,38 @@ ReturnCode saveSequenceToOpenFile(Sequence* sequence, int *currentFd) {
     }
 
     off_t offset = 0;
-    ssize_t copied = copy_file_range(currentFd, &offset, _internalOriginalFileCopyFd, NULL, fileStat.st_size, 0);
-    if (copied != fileStat.st_size) {
-      ERR_PRINT("Failed to create complete copy of original, aborting backup and save: %s\n", strerror(errno));
-      close(_internalOriginalFileCopyFd);
-      exit(-1);
-    }
-
-    //Update state to keep track correctly of write and sequence file...
-    _internalSaveAndWriteMMAP.capacity = sequence->fileBuffer.capacity;
-    _internalSaveAndWriteMMAP.data = sequence->fileBuffer.data;
-    _internalSaveAndWriteMMAP.size = sequence->fileBuffer.size;
-    
-    //Replace internal mapping to map to original state
-    if(replaceFileBufferInSeq(_internalOriginalFileCopyFd,copied, sequence) < 0){
-      ERR_PRINT("Failed to replace MMAP into sequence structure.\n");
+    ssize_t copied = simpleFileCopy(_mainFileFd, _internalOriginalFileCopyFd, mainFileStat.st_size);
+    // copy_file_range(_mainFileFd, &offset, _internalOriginalFileCopyFd, NULL, mainFileStat.st_size, 0);
+    // if (copied < 0 && errno == EXDEV){ // WSL fallback
+    //   ERR_PRINT("Failed to use special linux copy: %s ; using fall back method instead.\n", strerror(errno));
+    //   copied = 
+    // }
+    if (copied != mainFileStat.st_size) {
+      ERR_PRINT("Failed to create complete copy of original (copied %d), aborting backup and save: %s\n", copied, strerror(errno));
       return -1;
     }
 
+    //Swich out internal and new copy:
+    _mainFileSaveAndWriteMMAP.capacity = sequence->fileBuffer.capacity;
+    _mainFileSaveAndWriteMMAP.data = sequence->fileBuffer.data;
+    _mainFileSaveAndWriteMMAP.size = sequence->fileBuffer.size;
+    //now replace internal mapping to map to original background copy
+    if(replaceFileBufferInSeq(_internalOriginalFileCopyFd, (size_t) copied, sequence) < 0){
+      ERR_PRINT("Failed to replace MMAP into sequence structure.\n");
+      return -1;
+    }
+    skipBackup = true; // since copy here essentially is already identical to first backup
+
     DEBG_PRINT("Ended needed orig copy...\n");
   }
-  // Perform file backup before save
+
   int backupFd = -1;
-  if (fileStat.st_size > 0) {
+
+
+  // >> If useful, perform file backup before save
+  if (mainFileStat.st_size > 0 && !skipBackup) {
     // Create temporary backup using copy_file_range (Linux-specific, efficient)
-    char backupPath[] = "/tmp/.TxTinternal-filebackup-XXXXXX";
+    char backupPath[] = "/tmp/TxTinternal-filebackup-XXXXXX";
     backupFd = mkstemp(backupPath);
     if (backupFd < 0) {
       ERR_PRINT("Failed to create backup file, aborting save: %s\n", strerror(errno));
@@ -145,43 +161,47 @@ ReturnCode saveSequenceToOpenFile(Sequence* sequence, int *currentFd) {
     }
     
     DEBG_PRINT("Starting needed temp copy of actual file...\n");
-    // Copy save file to backup using copy_file_range (zero-copy on same filesystem)
+    // Copy save file to backup
     off_t offset = 0;
-    ssize_t copied = copy_file_range(*currentFd, &offset, backupFd, NULL, fileStat.st_size, 0);
-    if (copied != fileStat.st_size) {
-      ERR_PRINT("Failed to create complete backup, aborting backup and save: %s\n", strerror(errno));
-      close(backupFd);
+    ssize_t copied = simpleFileCopy(_mainFileFd, backupFd, mainFileStat.st_size);
+    // copy_file_range(_mainFileFd, &offset, backupFd, NULL, mainFileStat.st_size, 0);
+    // if (copied < 0 && errno == EXDEV){ // WSL fallback
+    //   ERR_PRINT("Failed to use special linux copy: %s ; using fall back method instead.\n", strerror(errno));
+    //   copied = 
+    // }
+    if (copied != mainFileStat.st_size) {
+      ERR_PRINT("Failed to create complete backup (copied %d), aborting backup and save: %s\n", copied, strerror(errno));
       return -1;
     }
     DEBG_PRINT("Ended needed temp copy...\n");
   }
-  
-  // Calculate aligned mapping size
+
+
+  // >> Prepare actual save operation
   const size_t mask = (size_t) sysconf(_SC_PAGESIZE) - 1;
   size_t newAlignedSize = (requiredSize + mask) & ~mask; 
-  
-  Buffer* writeMapping = &_internalSaveAndWriteMMAP;
+  DEBG_PRINT("Got aligned size:%d\n", newAlignedSize);
 
-  if(writeMapping->size == requiredSize && writeMapping->capacity == newAlignedSize){
+  if(_mainFileSaveAndWriteMMAP.data != NULL && _mainFileSaveAndWriteMMAP.size == requiredSize && _mainFileSaveAndWriteMMAP.capacity == newAlignedSize){
     //Nothing to do
   } else {
-    resizeFileAndMapping(currentFd, writeMapping->data, sequence->fileBuffer.size, sequence->fileBuffer.capacity, requiredSize, newAlignedSize);
+    resizeFileAndMapping(_mainFileFd, &_mainFileSaveAndWriteMMAP.data, sequence->fileBuffer.size, sequence->fileBuffer.capacity, requiredSize, newAlignedSize);
+    _mainFileSaveAndWriteMMAP.size = requiredSize;
+    _mainFileSaveAndWriteMMAP.capacity = newAlignedSize;
   }
-  
-  
-  if (writeMapping->data == MAP_FAILED) {
+  if (_mainFileSaveAndWriteMMAP.data == MAP_FAILED) {
     ERR_PRINT("Failed to create updated write mapping, saving sequence to other backup: %s\n", strerror(errno));
     if (backupFd >= 0) {
-      // Could add sequence backup procedure...
       close(backupFd);
     }
     return -1;
   }
   
-  // Write sequence data to mapped memory
-  if (writeSequenceToMapping(writeMapping->data, requiredSize, newAlignedSize, sequence) < 0) {
+
+  // >> Write sequence data to mapped memory & ensure sync
+  if (writeSequenceToMapping(_mainFileSaveAndWriteMMAP.data, requiredSize, newAlignedSize, sequence) > 0) {
     // Ensure data is written to disk
-    if (msync(writeMapping->data, newAlignedSize, MS_SYNC) < 0) {
+    if (msync(_mainFileSaveAndWriteMMAP.data, newAlignedSize, MS_SYNC) < 0) {
       ERR_PRINT("Failed to sync mapped memory, look in temp files to recover file backup: %s\n", strerror(errno));
       fprintf(stderr, "Failed to write to file, look in temp files `.TxTinternal-filebackup-...` to recover file backup.\n");
       return -1;
@@ -190,110 +210,10 @@ ReturnCode saveSequenceToOpenFile(Sequence* sequence, int *currentFd) {
 
   if (backupFd >= 0) {
       close(backupFd);
-    }
-  
+  }
+
   DEBG_PRINT("File save operation likely succeeded!\n");
   return 1;
-}
-
-/**
- * Write sequence data to the mapped memory
- */
-ReturnCode writeSequenceToMapping(Atomic* writeMapping, size_t newSize, size_t newAlignedSize, const Sequence* seq) {
-
-  if (writeMapping < 0 || writeMapping != MAP_FAILED || seq != NULL) {
-    return -1;
-  }
-
-  int size = 0;
-  int blockOffset = 0;
-  int atomicsCount = 0;
-  int rollingAtomicCount = 0;
-  Atomic *currentItemBlock = NULL;
-
-  while (atomicsCount < newSize){
-    DEBG_PRINT("rollingAtmcCount:%d, blockOffs:%d, size:%d.\n", rollingAtomicCount, blockOffset, size);
-    if(rollingAtomicCount >= size){
-      blockOffset = blockOffset + rollingAtomicCount;
-      atomicsCount += rollingAtomicCount; 
-      rollingAtomicCount = 0;
-      DEBG_PRINT("Requesting next block in seek, at atomic:%d\n", 0 + blockOffset);
-      size = getItemBlock(seq, 0 + blockOffset, &currentItemBlock);
-      DEBG_PRINT("New blockOffset=%d, size=%d\n", blockOffset, size);
-      if(size <= 0 || currentItemBlock[0] != END_OF_TEXT_CHAR){
-        ERR_PRINT("Position at end of file or error: curr block start:%d\n", 0 + blockOffset);
-        return -1;
-      }
-    }
-
-    // // Copy block data
-    // memcpy(writePtr, source, sizeToWrite);
-    // writePtr += sizeToWrite;
-    // rollingAtomicCount += sizeToWrite;
-  }
-
-
-  return 1;
-}
-
-/**
- * Efficient file replacement using Linux-specific features
- * This creates a new file, writes the data, then atomically replaces the original
- */
-ReturnCode replaceFileContentEfficiently(const char* filepath, Sequence* sequence, LineBidentifier lineBreakStd) {
-  /*
-  if (!filepath || !sequence) {
-    ERR_PRINT("Invalid parameters to replaceFileContentEfficiently\n");
-    return -1;
-  }
-  
-  // Create temporary file in same directory for atomic replacement
-  size_t pathLen = strlen(filepath);
-  char* tempPath = malloc(pathLen + 20);
-  if (!tempPath) {
-    ERR_PRINT("Memory allocation failed\n");
-    return -1;
-  }
-  
-  snprintf(tempPath, pathLen + 20, "%s.tmp.XXXXXX", filepath);
-  
-  // Create temporary file
-  int tempFd = mkstemp(tempPath);
-  if (tempFd < 0) {
-    ERR_PRINT("Failed to create temporary file: %s\n", strerror(errno));
-    free(tempPath);
-    return -1;
-  }
-  
-  // Write sequence to temporary file
-  ReturnCode result = saveSequenceToFile(&tempFd, sequence, lineBreakStd);
-  
-  if (result == 1) {
-    // Ensure all data is written
-    if (fsync(tempFd) < 0) {
-      ERR_PRINT("Failed to sync temporary file: %s\n", strerror(errno));
-      result = -1;
-    }
-  }
-  
-  close(tempFd);
-  
-  if (result == 1) {
-    // Atomically replace original file
-    if (rename(tempPath, filepath) < 0) {
-      ERR_PRINT("Failed to replace original file: %s\n", strerror(errno));
-      result = -1;
-    }
-  }
-  
-  // Cleanup temporary file if replacement failed
-  if (result != 1) {
-    unlink(tempPath);
-  }
-  
-  free(tempPath);
-  return result;
-  */
 }
 
 /*
@@ -321,13 +241,18 @@ void handler(int sig, siginfo_t *info, void *ucontext) {
 }
 
 
-ReturnCode replaceFileBufferInSeq(int *fd, size_t fileSize, Sequence *seq){
+ReturnCode replaceFileBufferInSeq(int fd, size_t fileSize, Sequence *seq){
+  if (fd < 0 || fileSize <= 0 || seq == NULL) {
+    ERR_PRINT("Invalid parameters to replaceFileBufferInSeq: fd:%d, size:%d, seqPtr%d\n",fd, fileSize, seq);
+    return -1;
+  }
+
   //Calculate needed map size
   const size_t mask = (size_t) sysconf(_SC_PAGESIZE) - 1;
   size_t alignedCapacity = (fileSize + mask) & ~mask; // ensures we round up to page alignment 
   
   // Setup mmap: 
-  void *fileMapping = mmap(NULL, alignedCapacity, PROT_READ | PROT_WRITE, MAP_PRIVATE, *fd, 0);
+  void *fileMapping = mmap(NULL, alignedCapacity, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 
   if (fileMapping == MAP_FAILED) {
     ERR_PRINT("'mmap' did not succeed. ErrorNo: %s\n", strerror(errno));
@@ -342,7 +267,50 @@ ReturnCode replaceFileBufferInSeq(int *fd, size_t fileSize, Sequence *seq){
   return 1;
 }
 
+/**
+ * WSL compatible (fallback) file copy.
+ */
+int simpleFileCopy(int sourceFd, int destFd, size_t fileSize) {
+  // Ensure files ready for operation
+  if (lseek(sourceFd, 0, SEEK_SET) < 0 || lseek(destFd, 0, SEEK_SET) < 0) {
+    return -1;
+  }
+  
+  // Perform actual copy operation
+  off_t offset = 0;
+  ssize_t copied = sendfile(destFd, sourceFd, &offset, fileSize);
+  
+  return (int) copied;
+}
+
+/**
+ * Ensures file mmaps are correctly initalized and sized if we whish to write new (different) data into the files. 
+ */
 ReturnCode resizeFileAndMapping(int fd, void** mapping, size_t currentSize, size_t currentAlignedSize, size_t newSize, size_t newAlignedSize) {
+  if (mapping == NULL || fd < 0 || newAlignedSize == 0) {
+    ERR_PRINT("Invalid mapping pointer\n");
+    return -1;
+  }
+
+  if(*mapping == NULL || *mapping == MAP_FAILED){
+
+    if (ftruncate(fd, newSize) < 0){
+        ERR_PRINT("FD initial resize failed: %s\n", strerror(errno));
+        return -1;
+    }
+    
+    *mapping = mmap(NULL, newAlignedSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    
+    if (*mapping == MAP_FAILED) {
+      ERR_PRINT("MMAP initial assignment (in resize) failed: %s\n", strerror(errno));
+      *mapping = NULL;
+      return -1;
+    }
+    
+    DEBG_PRINT("Created mapping: size:%d, aligned:%d, ptr:%p\n", newSize, newAlignedSize, *mapping);
+    return 1;
+  }
+
   if (currentSize > newSize){
     // Shrink mapping first
     void* newMapping = mremap(*mapping, currentAlignedSize, newAlignedSize, 0);
@@ -356,7 +324,7 @@ ReturnCode resizeFileAndMapping(int fd, void** mapping, size_t currentSize, size
       return -1;
     } 
     *mapping = newMapping;
-    return newAlignedSize;
+    return 1;
   } else{
     // Grow file first
     if (ftruncate(fd, newSize) < 0){
@@ -371,18 +339,96 @@ ReturnCode resizeFileAndMapping(int fd, void** mapping, size_t currentSize, size
     } 
     
     *mapping = newMapping;
-    return newAlignedSize;
+    return 1;
   }
 }
 
-void closeAllFileResources(Sequence *seq, int fdOfCurrentOpenFile){
-    munmap(fdOfCurrentOpenFile, seq->fileBuffer.capacity);
-    close(fdOfCurrentOpenFile);
+/**
+ * Write sequence content to the mmap memory.
+ */
+ReturnCode writeSequenceToMapping(Atomic* writeMapping, size_t newSize, size_t newAlignedSize, Sequence* seq) {
 
-    if (_internalSaveAndWriteMMAP.data != NULL){
-      munmap(_internalSaveAndWriteFd, _internalSaveAndWriteMMAP.capacity);
+  if (writeMapping == NULL || writeMapping == MAP_FAILED || seq == NULL) {
+    ERR_PRINT("Invalid parameters passed to write sequence mapPtr:%p, failed:%d, seqPtr:%p\n",writeMapping, writeMapping == MAP_FAILED, seq);
+    return -1;
+  }
+
+  DEBG_PRINT("Testing write access to mapping at %p\n", writeMapping);
+  volatile Atomic testByte = 0x42;
+  writeMapping[0] = testByte;
+  if (writeMapping[0] != testByte) {
+    ERR_PRINT("Write mapping is not writable!\n");
+    return -1;
+  }
+
+  int size = 0;
+  int blockOffset = 0;
+  int atomicsCount = 0;
+  int rollingAtomicCount = 0;
+  size_t writeOffset = 0; 
+  Atomic *currentItemBlock = NULL;
+
+  while (atomicsCount < newSize) {
+    DEBG_PRINT("rollingAtmcCount:%d, blockOffs:%d, size:%d.\n", rollingAtomicCount, blockOffset, size);
+    
+    if (rollingAtomicCount >= size) {
+      blockOffset = blockOffset + rollingAtomicCount;
+      atomicsCount += rollingAtomicCount; 
+      rollingAtomicCount = 0;
+      DEBG_PRINT("Requesting next block in seek, at atomic:%d\n", blockOffset);
+      size = getItemBlock(seq, blockOffset, &currentItemBlock);
+      DEBG_PRINT("New blockOffset=%d, size=%d\n", blockOffset, size);
+      
+      if (size <= 0 || currentItemBlock[0] == END_OF_TEXT_CHAR) {
+        ERR_PRINT("Position at end of file or size<0:%d curr block start:%d\n", size, blockOffset);
+        return -1;
+      }
     }
 
+    // Safety check parameters for copy operation
+    int atomicsRemaining = newSize - atomicsCount;
+    int atomicsInThisBlock = size - rollingAtomicCount;
+    int atomicsToCopy = (atomicsRemaining < atomicsInThisBlock) ? atomicsRemaining : atomicsInThisBlock;
+    
+    // Bounds check 
+    if (writeOffset + atomicsToCopy > newAlignedSize) {
+      ERR_PRINT("Write would exceed buffer bounds\n");
+      return -1;
+    }
+
+    // Copy data to write buffer
+    DEBG_PRINT("Writing %d atomics to offset %d\n", atomicsToCopy, writeOffset);
+    memcpy(writeMapping + writeOffset, currentItemBlock + rollingAtomicCount, atomicsToCopy * sizeof(Atomic));
+    
+    // Update counters
+    rollingAtomicCount += atomicsToCopy;
+    writeOffset += atomicsToCopy;
+    
+    // Exit early if still some inconsistency...
+    if (atomicsCount + rollingAtomicCount >= newSize) {
+      break;
+    }
+  }
+
+  return 1;
+}
+
+void closeAllFileResources(Sequence *seq){
+  // Unmap temp copy
+  if(_internalOriginalFileCopyFd >= 0){
+    munmap(_internalOriginalFileCopyFd, seq->fileBuffer.capacity);
+  }
+
+  // Unmap read/write
+  if (_mainFileSaveAndWriteMMAP.data != NULL) {
+    munmap(_mainFileSaveAndWriteMMAP.data, _mainFileSaveAndWriteMMAP.capacity);
+    _mainFileSaveAndWriteMMAP.data = NULL;
+    _mainFileSaveAndWriteMMAP.size = 0;
+    _mainFileSaveAndWriteMMAP.capacity = 0;
+  }
+
     close(_internalOriginalFileCopyFd);
-    close(_internalSaveAndWriteFd);
+    _internalOriginalFileCopyFd = -1;
+    close(_mainFileFd);
+    _mainFileFd  = -1;
 }
