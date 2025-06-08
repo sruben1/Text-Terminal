@@ -185,58 +185,61 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                     ERR_PRINT("utf_8 to Wchar conversion failed! ending here!\n");
                     return -1;
                 }
-                /*
-                #ifdef DEBUG
-                // Basic test print to test backend:
-                DEBG_PRINT("section start = %d, Offset = %d \n", currentSectionStart, offsetCounter);
-                char* textContent = (char*)currentItemBlock;
-                DEBG_PRINT("~~~~~~~~~~~~~~~~~~\n");
-                for (size_t i = 0; lineToPrint[i] != L'\0'; i++) {
-                    if(lineToPrint[i] != L'\n'){
-                        DEBG_PRINT("%lc", (uint32_t) lineToPrint[i]);
-                    } else {
-                        DEBG_PRINT("[\\n]");
-                    }
-                }
-                DEBG_PRINT("\n~~~~~~~~~~~~~~~~~~\n");
-                for (int i = currentSectionStart; i <= currentSectionStart + offsetCounter; i++) {
-                    DEBG_PRINT("| %02x |", (uint8_t) textContent[i]);
-                }
-                DEBG_PRINT("\n~~~~~~~~~~~~~~~~~~\n");
-                #endif  
-                */
+
                 if(currentItemBlock[currentSectionStart] != END_OF_TEXT_CHAR){
                     //print out line or block (could be either!!), interpreted as UTF-8 sequence:atomicsInLine:
                     DEBG_PRINT(">>>>>>Trying to print: line %d, at column %d\n", currLineBcount, nbrOfUtf8CharsNoControlCharsInLine);
                     // Horizontal scrolling implementation:
                     int horizontalScroll = getCurrHorizontalScrollOffset();
-                    // always cut off string at largest size... 
-                    if ((nbrOfUtf8CharsNoControlCharsInLine - horizontalScroll + nbrOfUtf8Chars) > lastGuiWidth-1){
-                        int calc = lastGuiWidth -1 + horizontalScroll -nbrOfUtf8CharsInLine;
-                        if(calc > 0 && calc < wcslen(lineToPrint)){
-                            lineToPrint[calc] = L'\0';
-                            DEBG_PRINT("Cutoff the block at:%d\n", calc);
-                        } else{
-                            lineToPrint[0] = L'\0';
-                            DEBG_PRINT("Cutoff the block at:0\n");
+                    
+                    // Calculate the actual display position and length
+                    int displayStartCol = nbrOfUtf8CharsNoControlCharsInLine - horizontalScroll;
+                    if (displayStartCol < 0) displayStartCol = 0;
+                    
+                    // Calculate how much of the string to display
+                    int availableWidth = lastGuiWidth - displayStartCol;
+                    if (availableWidth <= 0) {
+                        // Nothing to display on this line
+                        DEBG_PRINT("Line completely scrolled off screen\n");
+                    } else {
+                        // Determine the substring to print
+                        wchar_t* printStr = lineToPrint;
+                        int printLen = wcslen(lineToPrint);
+                        
+                        // Handle horizontal scrolling offset within the string
+                        int stringOffset = 0;
+                        if (horizontalScroll > nbrOfUtf8CharsNoControlCharsInLine) {
+                            stringOffset = horizontalScroll - nbrOfUtf8CharsNoControlCharsInLine;
+                            if (stringOffset >= printLen) {
+                                stringOffset = printLen;
+                                printLen = 0;
+                            } else {
+                                printStr += stringOffset;
+                                printLen -= stringOffset;
+                            }
                         }
                         
+                        // Truncate if too long for available width
+                        if (printLen > availableWidth) {
+                            printLen = availableWidth;
+                        }
+                        
+                        // Only print if we have something to print
+                        if (printLen > 0) {
+                            // Temporarily null-terminate the string for printing
+                            wchar_t originalChar = printStr[printLen];
+                            printStr[printLen] = L'\0';
+                            
+                            // Clear any existing attributes before printing
+                            attrset(A_NORMAL);
+                            mvaddwstr(currLineBcount, displayStartCol, printStr);
+                            
+                            // Restore the original character
+                            printStr[printLen] = originalChar;
+                            
+                            DEBG_PRINT("Printed line at row %d, col %d: length %d\n", currLineBcount, displayStartCol, printLen);
+                        }
                     }
-
-                    // Counter so that print knows where to print depending on horizontal scroll.
-                    if(lastHorizScroll != horizontalScroll){
-                        lastHorizScroll = horizontalScroll;
-                        sinceHorizScrollCounter = 0;
-                        DEBG_PRINT("horiz scroll change registered: %d\n", horizontalScroll);
-                    }
-                    if (nbrOfUtf8CharsNoControlCharsInLine + nbrOfUtf8CharsNoControlChars > horizontalScroll){ 
-                        mvwaddwstr(stdscr, currLineBcount, sinceHorizScrollCounter, lineToPrint + horizontalScroll);
-                        DEBG_PRINT("Printing line/block %ls\n", lineToPrint);
-                        mvwaddwstr(stdscr, currLineBcount, nbrOfUtf8CharsNoControlCharsInLine, lineToPrint + horizontalScroll);
-                    } else {
-                        DEBG_PRINT("skipping print due to horiz scroll:  %d < %d + %d\n", horizontalScroll, nbrOfUtf8CharsNoControlCharsInLine, nbrOfUtf8CharsNoControlChars);
-                    }
-
                 }
 
                 /* reset&setup for next block/line iteration: */
@@ -249,12 +252,6 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
 
                     // Save in the line stats (from variables) into dedicated management structure:
                     updateLine(currLineBcount, frozenLineStart, nbrOfUtf8CharsNoControlCharsInLine);
-
-
-                    if (sinceHorizScrollCounter == 0){ 
-                        DEBG_PRINT("Printed empty");
-                        mvwaddwstr(stdscr, currLineBcount, 0, L"");
-                    }
 
                     currLineBcount++;
 
@@ -483,31 +480,34 @@ void handle_button_press(int button_index) {
 }
 
 void draw_text_input_field(int y, int x, int width, const wchar_t* prompt, const wchar_t* input, int cursor_pos, bool active) {
-    // Clear the area
+    attroff(A_REVERSE);  
     mvprintw(y, x, "%*s", width + FIELD_PROMPT_WIDTH + 3, "");
     
-    // Draw prompt
+    // Draw 
     mvprintw(y, x, "%ls: ", prompt);
     int prompt_len = wcslen(prompt) + 2; 
     
-    // Draw input box brackets
     mvprintw(y, x + prompt_len, "[");
     mvprintw(y, x + prompt_len + width + 1, "]");
     
-    // Draw input text
     if (wcslen(input) > 0) {
-        // Convert wide string to multibyte for printing
-        size_t input_len = wcslen(input);
-        char* mb_input = malloc((input_len * 4 + 1) * sizeof(char));
-        if (mb_input) {
-            size_t converted = wcstombs(mb_input, input, input_len * 4);
-            if (converted != (size_t)-1) {
-                mb_input[converted] = '\0';
-                // Limit display to field width
-                int display_len = (strlen(mb_input) > width) ? width : strlen(mb_input);
-                mvprintw(y, x + prompt_len + 1, "%.*s", display_len, mb_input);
-            }
-            free(mb_input);
+        // Use mvaddwstr instead of converting to multibyte
+        // This should preserve character encoding better
+        int input_start_x = x + prompt_len + 1;
+        int input_len = wcslen(input);
+        int display_len = (input_len > width) ? width : input_len;
+        
+        // Create a temporary null-terminated string for display
+        wchar_t* display_str = malloc((display_len + 1) * sizeof(wchar_t));
+        if (display_str) {
+            wcsncpy(display_str, input, display_len);
+            display_str[display_len] = L'\0';
+            
+            // Make sure we're in normal attribute mode before printing
+            attrset(A_NORMAL);
+            mvaddwstr(y, input_start_x, display_str);
+            
+            free(display_str);
         }
     }
     
@@ -515,6 +515,9 @@ void draw_text_input_field(int y, int x, int width, const wchar_t* prompt, const
     if (active) {
         int cursor_screen_pos = cursor_pos;
         if (cursor_screen_pos > width) cursor_screen_pos = width;
+        
+        // Ensure cursor positioning doesn't interfere with attributes
+        attrset(A_NORMAL);
         move(y, x + prompt_len + 1 + cursor_screen_pos);
     }
 }
@@ -1528,25 +1531,37 @@ void relocateAndupdateCursorAndMenu(int newX, int newY){
  * Automatically jumps to next/previous line if legal to do so.  
  */
 void relocateCursorNoUpdate(int newX, int newY){
+    DEBG_PRINT("button test1\n");
     if (currMenuState != NOT_IN_MENU){
+         DEBG_PRINT("button test2\n");
+
         if(currMenuState == FIND || currMenuState == F_AND_R1){
+            DEBG_PRINT("button test3\n");
             if(newX < wcslen(firstMenuInput) && newX >= 0){
+                DEBG_PRINT("button test4\n");
                 menuCursor = newX;
             }
         } else if(currMenuState == F_AND_R2){
+            DEBG_PRINT("button test5\n");
             if(newX < wcslen(secondMenuInput) && newX >= 0){
+                DEBG_PRINT("button test6\n");
                 menuCursor = newX;
             }
         } else{
+            DEBG_PRINT("button test6\n");
             //Exit menu mode since interrupted
             currMenuState = NOT_IN_MENU;
         }
-        updateCursorAndMenu();
+        // REMOVED: updateCursorAndMenu(); // This was causing infinite recursion!
+        DEBG_PRINT("button test7\n");
         return;
     }
+    DEBG_PRINT("button test8\n");
     bool changedY = !(cursorY == newY);
     // Handle Y:
+    DEBG_PRINT("button test9\n");
     int amtOfRelativeLines = getTotalAmountOfRelativeLines();
+    DEBG_PRINT("button test10\n");
     if(newY < amtOfRelativeLines && newY >= 0){
         // Standard case (x handled in next big if block):
         DEBG_PRINT("Y standard case.\n");
@@ -1572,7 +1587,7 @@ void relocateCursorNoUpdate(int newX, int newY){
         ERR_PRINT("Unexpected, unhandled case in 'relocateCursor'\n");
         return;
     }
-
+    DEBG_PRINT("button test11\n");
     // Handle X (with respect to new Y): 
     int charCountAtY = getUtfNoControlCharCount(cursorY);
     if(newX <= charCountAtY && newX >= 0){
@@ -1602,7 +1617,6 @@ void relocateCursorNoUpdate(int newX, int newY){
     }
     resetRangeSelectionState();
 }
-
 /* ----- Change cursor selection range -----*/
 
 /**
@@ -1678,7 +1692,7 @@ void relocateRangeEndAndUpdate(int newX, int newY){
 bool autoAdjustHorizontalScrolling(bool forEndCursor){
     if (currMenuState != NOT_IN_MENU) {
         return false;
-    }D
+    }
     int currHorizScroll = getCurrHorizontalScrollOffset();
     int newHorizScroll = 0;
 
