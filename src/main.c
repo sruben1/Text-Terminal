@@ -71,7 +71,7 @@ void close_editor(void);
 void checkSizeChanged(void);
 void process_input(void);
 bool is_printable_unicode(wint_t wch);
-void changeScrolling(int incrY);
+void changeScrolling(int incrY, bool find);
 
 // Regular cursor mode:
 void changeAndupdateCursorAndMenu(int incrX, int incrY);
@@ -634,6 +634,14 @@ void handle_menu_input(wint_t wch, int status) {
                 if (currMenuState == FIND) {
                     // TODO: Implement search functionality using firstMenuInput
                     DEBG_PRINT("Searching for: %ls\n", firstMenuInput);
+                    SearchResult resultFind = find(activeSequence, firstMenuInput, 0);
+                    DEBG_PRINT("Find results: resultFind.lineNumber=%d, resultFind.foundPosition=%d\n", resultFind.lineNumber, resultFind.foundPosition);
+                    if(resultFind.foundPosition != -1){
+                        screenTopLine = gettopMostLineNbr;
+                        changeScrolling(resultFind.lineNumber - screenTopLine, true);
+                        cursorX = resultFind.foundPosition;
+                        cursorEndX = resultFind.foundPosition;
+                    }
                     currMenuState = NOT_IN_MENU;
                     refreshFlag = true;
                 } else if (currMenuState == F_AND_R1) {
@@ -643,6 +651,14 @@ void handle_menu_input(wint_t wch, int status) {
                 } else if (currMenuState == F_AND_R2) {
                     // TODO: Implement find and replace functionality
                     DEBG_PRINT("Find: %ls, Replace: %ls\n", firstMenuInput, secondMenuInput);
+                    SearchResult resultFindAndReplace = findAndReplace(activeSequence, firstMenuInput, secondMenuInput, 0);
+                    DEBG_PRINT("Find and Replace results: resultFindAndReplace.lineNumber=%d, resultFindAndReplace.foundPosition=%d\n", resultFindAndReplace.lineNumber, resultFindAndReplace.foundPosition);
+                    if(resultFindAndReplace.foundPosition != -1){
+                        screenTopLine = gettopMostLineNbr;
+                        changeScrolling(resultFindAndReplace.lineNumber - screenTopLine, true);
+                        cursorX = resultFindAndReplace.foundPosition;
+                        cursorEndX = resultFindAndReplace.foundPosition;
+                    }
                     currMenuState = NOT_IN_MENU;
                     refreshFlag = true;
                 }
@@ -1219,11 +1235,11 @@ if (status == OK && wch == CTRL_KEY('y')) {
                 break;
             case KEY_NPAGE: // Page up as select up
                 //changeRangeEndAndUpdate(0,1);
-                changeScrolling(1);
+                changeScrolling(1, false);
                 break;
             case KEY_PPAGE: // Page down as select down
                 //changeRangeEndAndUpdate(0,-1);
-                changeScrolling(-1);
+                changeScrolling(-1, false);
                 break;
              /*---- Backspace & Delete ----*/
             case KEY_BACKSPACE: // Backspace
@@ -1456,7 +1472,7 @@ if (status == OK && wch == CTRL_KEY('y')) {
 */
 
 // Handle vertical scrolling
-void changeScrolling(int incrY){
+void changeScrolling(int incrY, bool find){
     screenTopLine = gettopMostLineNbr;
 
     if (incrY != 0) {
@@ -1473,19 +1489,33 @@ void changeScrolling(int incrY){
                 // Scroll up
                 DEBG_PRINT("changeScrolling scroll up\n");
                 if (screenTopLine > 0) { // Can't scroll up further when at the very top
-                    cursorY++;
-                    cursorEndY++;
-                    moveAbsoluteLineNumbers(activeSequence, -1);
-                    refreshFlag = true;
+                    if(find == true){
+                        cursorY=0;
+                        cursorEndY=0;
+                        moveAbsoluteLineNumbers(activeSequence, incrY);
+                        refreshFlag = true;
+                    } else {
+                        cursorY++;
+                        cursorEndY++;
+                        moveAbsoluteLineNumbers(activeSequence, -1);
+                        refreshFlag = true;
+                    }
                 }
             } else if (incrY > 0) {
                 // Scroll down
                 DEBG_PRINT("changeScrolling scroll down\n");
                 if (0 < visibleLines) {
-                    cursorY--;
-                    cursorEndY--;
-                    moveAbsoluteLineNumbers(activeSequence, 1);
-                    refreshFlag = true;
+                    if(find == true){
+                        cursorY=0;
+                        cursorEndY=0;
+                        moveAbsoluteLineNumbers(activeSequence, incrY);
+                        refreshFlag = true;
+                    } else {
+                        cursorY--;
+                        cursorEndY--;
+                        moveAbsoluteLineNumbers(activeSequence, 1);
+                        refreshFlag = true;
+                    }
                 }
             }
         }
