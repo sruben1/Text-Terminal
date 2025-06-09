@@ -700,7 +700,7 @@ void handle_menu_input(wint_t wch, int status) {
                     if(resultFind.foundPosition != -1) {
                         int foundLineStart = backtrackToFirstAtomicInLine(activeSequence, resultFind.foundPosition);
                         if (foundLineStart >= 0) {
-                            jumpAbsoluteLineNumber(resultFind.lineNumber, foundLineStart);
+                            jumpAbsoluteLineNumber(resultFind.lineNumber - 1, foundLineStart);
                             cursorY = 0;
                             cursorEndY = 0;
                             cursorX = resultFind.foundPosition - foundLineStart;
@@ -721,7 +721,7 @@ void handle_menu_input(wint_t wch, int status) {
                     if(resultFindAndReplace.foundPosition != -1) {
                         int foundLineStart = backtrackToFirstAtomicInLine(activeSequence, resultFindAndReplace.foundPosition);
                         if (foundLineStart >= 0) {
-                            jumpAbsoluteLineNumber(resultFindAndReplace.lineNumber, foundLineStart);
+                            jumpAbsoluteLineNumber(resultFindAndReplace.lineNumber - 1, foundLineStart);
                             cursorY = 0;
                             cursorEndY = 0;
                             cursorX = resultFindAndReplace.foundPosition - foundLineStart;
@@ -1874,7 +1874,7 @@ void updateCursorAndMenu(){
             // Draw buttons first
             draw_buttons();
             
-            mvprintw(lastGuiHeight - 2, 0, "Ln %d, Col %d || %d words, %d lines || Ctrl-l to quit", cursorY + horizOffs + 1, cursorX + horizOffs + 1, getCurrentWordCount(activeSequence), getCurrentLineCount(activeSequence));
+            mvprintw(lastGuiHeight - 2, 0, "Ln %d, Col %d || %d words, %d lines || Ctrl-l to quit", getGeneralLineNbr(cursorY + horizOffs + 1), cursorX + horizOffs + 1, getCurrentWordCount(activeSequence), getCurrentLineCount(activeSequence));
         }
     } else {
         autoAdjustHorizontalScrolling(true);
@@ -1903,7 +1903,7 @@ void updateCursorAndMenu(){
             if (currMenuState == NOT_IN_MENU) {
                 int horizOffs = getCurrHorizontalScrollOffset();
                 int status_x = buttons[2].x + buttons[2].width + 10;
-                mvprintw(lastGuiHeight - 2, 0, "Ln %d-%d, Col %d-%d || %d words, %d lines || Ctrl-l to quit", cursorY + horizOffs + 1, cursorEndY + horizOffs +1, cursorX + horizOffs + 1, cursorEndX + horizOffs +1, getCurrentWordCount(activeSequence), getCurrentLineCount(activeSequence));
+                mvprintw(lastGuiHeight - 2, 0, "Ln %d-%d, Col %d-%d || %d words, %d lines || Ctrl-l to quit", getGeneralLineNbr(cursorY + horizOffs + 1), getGeneralLineNbr(cursorEndY + horizOffs +1), cursorX + horizOffs + 1, cursorEndX + horizOffs +1, getCurrentWordCount(activeSequence), getCurrentLineCount(activeSequence));
             }
 
         }

@@ -73,7 +73,7 @@ typedef struct OperationStack OperationStack;
 /* Position and line number of a text in the sequence */
 typedef struct {
     Position foundPosition; // Position of the first character of the found text
-    int lineNumber;         // Line number of the found text
+    int lineNumber;         // Line number of the found text (starting from 1)
 } SearchResult;
 
 /* Cache entry representing the last insertion */
