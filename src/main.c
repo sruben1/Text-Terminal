@@ -643,8 +643,8 @@ void handle_menu_input(wint_t wch, int status) {
                             jumpAbsoluteLineNumber(resultFind.lineNumber, foundLineStart);
                             cursorY = 0;
                             cursorEndY = 0;
-                            cursorX = 0;
-                            cursorEndX = 0;
+                            cursorX = resultFind.foundPosition - foundLineStart;
+                            cursorEndX = resultFind.foundPosition - foundLineStart;
                             refreshFlag = true;
                         }
                     }
@@ -664,8 +664,8 @@ void handle_menu_input(wint_t wch, int status) {
                             jumpAbsoluteLineNumber(resultFindAndReplace.lineNumber, foundLineStart);
                             cursorY = 0;
                             cursorEndY = 0;
-                            cursorX = 0;
-                            cursorEndX = 0;
+                            cursorX = resultFindAndReplace.foundPosition - foundLineStart;
+                            cursorEndX = resultFindAndReplace.foundPosition - foundLineStart;
                             refreshFlag = true;
                         }
                     }
@@ -1490,7 +1490,9 @@ if (status == OK && wch == CTRL_KEY('y')) {
 =================
 */
 
-// Handle vertical scrolling
+/**
+* Handle vertical scrolling. Only used for +-1 scrolling when pressing Page UP/DOWN.
+*/
 void changeScrolling(int incrY){
     DEBG_PRINT("[changeScrolling] gettopMostLineNbr=%d\n", gettopMostLineNbr);
     DEBG_PRINT("[changeScrolling] incrY=%d\n", incrY);
