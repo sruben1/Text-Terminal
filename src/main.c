@@ -1470,6 +1470,10 @@ if (status == OK && wch == CTRL_KEY('y')) {
                     DEBG_PRINT("Inserting line break at atomic:%d position with std:%d\n", atomicPos, getCurrentLineBstd());
 
                     if (insert(activeSequence, atomicPos, toInsert) > 0) {
+                        DEBG_PRINT("Enter Scroll: lastGuiHeight - MENU_HEIGHT -1=%d, cursorY=%d", lastGuiHeight - MENU_HEIGHT -1, cursorY);
+                        if(lastGuiHeight - MENU_HEIGHT -1 == cursorY){
+                            changeScrolling(1);
+                        }
                         // Exceptionally set it without safety in order to allow for leap of faith... 
                         cursorX = 0;
                         cursorY++;
