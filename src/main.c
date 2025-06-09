@@ -1223,7 +1223,7 @@ if (status == OK && wch == CTRL_KEY('y')) {
                 MEVENT event;
                 if (getmouse(&event) == OK) {
                     DEBG_PRINT("Handling MOUSE event.\n");
-                    if (event.bstate & BUTTON1_CLICKED) {
+                    if (event.bstate & (BUTTON1_CLICKED | BUTTON1_PRESSED)) {
                         // Check if click is on a button first
                         int button_clicked = check_button_click(event.x, event.y);
                         if (button_clicked != -1) {
