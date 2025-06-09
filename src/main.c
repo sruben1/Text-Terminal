@@ -688,10 +688,15 @@ void handle_menu_input(wint_t wch, int status) {
             case KEY_ENTER:
             case 10:
             case 13: // Enter key: transition menu state or execute action
+                int cursorForFind = getAbsoluteAtomicIndex(cursorY, cursorX+1, activeSequence)+1;
+                DEBG_PRINT("lastAtomic test: %d", getAbsoluteAtomicIndex(cursorY, cursorX+1, activeSequence));
+                if(getAbsoluteAtomicIndex(cursorY, cursorX+1, activeSequence) == -1){
+                        cursorForFind = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
+                    }
                 if (currMenuState == FIND || currMenuState == FIND_CYCLE) {
                     DEBG_PRINT("Searching for: %ls\n", firstMenuInput);
                     // In the search case (FIND or FIND_CYCLE):
-                    SearchResult resultFind = find(activeSequence, firstMenuInput, 0);
+                    SearchResult resultFind = find(activeSequence, firstMenuInput, cursorForFind);
                     if(resultFind.foundPosition != -1) {
                         int foundLineStart = backtrackToFirstAtomicInLine(activeSequence, resultFind.foundPosition);
                         if (foundLineStart >= 0) {
@@ -712,7 +717,7 @@ void handle_menu_input(wint_t wch, int status) {
                     menu_needs_refresh = true;
                 } else if (currMenuState == F_AND_R2 || currMenuState == F_AND_R_CYCLE) {
                     DEBG_PRINT("Find: %ls, Replace: %ls\n", firstMenuInput, secondMenuInput);
-                    SearchResult resultFindAndReplace = findAndReplace(activeSequence, firstMenuInput, secondMenuInput, 0);
+                    SearchResult resultFindAndReplace = findAndReplace(activeSequence, firstMenuInput, secondMenuInput, cursorForFind);
                     if(resultFindAndReplace.foundPosition != -1) {
                         int foundLineStart = backtrackToFirstAtomicInLine(activeSequence, resultFindAndReplace.foundPosition);
                         if (foundLineStart >= 0) {
