@@ -504,11 +504,10 @@ void handle_button_press(int button_index) {
     switch (button_index) {
         case 0: // Save button
             DEBG_PRINT("Save button pressed\n");
-            // TODO: Implement save functionality
-            // You'll need to add file saving logic here
-            if (lastGuiHeight >= MENU_HEIGHT) {
-                mvprintw(lastGuiHeight - 1, buttons[2].x + buttons[2].width + 10, "File saved!");
-                refresh();
+            if (saveSequence(activeSequence) > 0){
+                DEBG_PRINT("Save might have succeeded.\n");
+            } else{
+                DEBG_PRINT("Save failed.\n");
             }
             break;
             
@@ -1226,9 +1225,8 @@ if (status == OK && wch == CTRL_KEY('y')) {
         DEBG_PRINT("Processing SAVE.\n");
         if (saveSequence(activeSequence) > 0){
             DEBG_PRINT("Save might have succeeded.\n");
-            
         } else{
-            // handling?
+            DEBG_PRINT("Save failed.\n");
         }
     }
 
