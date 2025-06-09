@@ -54,8 +54,6 @@ bool refreshFlag = true;
 
 static int lastGuiHeight = 0, lastGuiWidth = 0;
 
-int screenTopLine = 0;
-
 // Menu implementations:
 enum _MenuState { NOT_IN_MENU, FIND, FIND_CYCLE, F_AND_R1, F_AND_R2, F_AND_R_CYCLE };
 static enum _MenuState currMenuState = NOT_IN_MENU;
@@ -693,24 +691,18 @@ void handle_menu_input(wint_t wch, int status) {
             case 13: // Enter key: transition menu state or execute action
                 if (currMenuState == FIND || currMenuState == FIND_CYCLE) {
                     DEBG_PRINT("Searching for: %ls\n", firstMenuInput);
-                    // TODO: Implement search functionality
+                    // In the search case (FIND or FIND_CYCLE):
                     SearchResult resultFind = find(activeSequence, firstMenuInput, 0);
-                    DEBG_PRINT("Find results: resultFind.lineNumber=%d, resultFind.foundPosition=%d\n", resultFind.lineNumber, resultFind.foundPosition);
-                    if(resultFind.foundPosition != -1){
-                        DEBG_PRINT("Find results: screenTopLine=%d\n", screenTopLine);
-                        if(resultFind.lineNumber - screenTopLine < 0){
-                            for(int i=0; i>resultFind.lineNumber - screenTopLine; i--){
-                                DEBG_PRINT("Find down loop: lineNumber-screenTopLine=%d, i=%d\n",resultFind.lineNumber - screenTopLine, i);
-                                changeScrolling(-1);
-                            }
-                        }else if (resultFind.lineNumber - screenTopLine > 0){
-                            for(int i=0; i<resultFind.lineNumber - screenTopLine; i++){
-                                DEBG_PRINT("Find down loop: lineNumber-screenTopLine=%d, i=%d\n",resultFind.lineNumber - screenTopLine, i);
-                                changeScrolling(1);
-                            }
+                    if(resultFind.foundPosition != -1) {
+                        int foundLineStart = backtrackToFirstAtomicInLine(activeSequence, resultFind.foundPosition);
+                        if (foundLineStart >= 0) {
+                            jumpAbsoluteLineNumber(resultFind.lineNumber, foundLineStart);
+                            cursorY = 0;
+                            cursorEndY = 0;
+                            cursorX = resultFind.foundPosition - foundLineStart;
+                            cursorEndX = resultFind.foundPosition - foundLineStart;
+                            refreshFlag = true;
                         }
-                        cursorX = resultFind.foundPosition;
-                        cursorEndX = resultFind.foundPosition;
                     }
                     currMenuState = NOT_IN_MENU;
                     refreshFlag = true; // Request full redraw after action
@@ -721,24 +713,17 @@ void handle_menu_input(wint_t wch, int status) {
                     menu_needs_refresh = true;
                 } else if (currMenuState == F_AND_R2 || currMenuState == F_AND_R_CYCLE) {
                     DEBG_PRINT("Find: %ls, Replace: %ls\n", firstMenuInput, secondMenuInput);
-                    // TODO: Implement find and replace functionality
                     SearchResult resultFindAndReplace = findAndReplace(activeSequence, firstMenuInput, secondMenuInput, 0);
-                    DEBG_PRINT("Find and Replace results: resultFindAndReplace.lineNumber=%d, resultFindAndReplace.foundPosition=%d\n", resultFindAndReplace.lineNumber, resultFindAndReplace.foundPosition);
-                    if(resultFindAndReplace.foundPosition != -1){
-                        DEBG_PRINT("Find results: screenTopLine=%d\n", screenTopLine);
-                        if(resultFindAndReplace.lineNumber - screenTopLine < 0){
-                            for(int i=0; i>resultFindAndReplace.lineNumber - screenTopLine; i--){
-                                DEBG_PRINT("Find&Replace down loop: lineNumber-screenTopLine=%d, i=%d\n",resultFindAndReplace.lineNumber - screenTopLine, i);
-                                changeScrolling(-1);
-                            }
-                        } else if(resultFindAndReplace.lineNumber - screenTopLine > 0){
-                            for(int i=0; i<resultFindAndReplace.lineNumber - screenTopLine; i++){
-                                DEBG_PRINT("Find&Replace down loop: lineNumber-screenTopLine=%d, i=%d\n",resultFindAndReplace.lineNumber - screenTopLine, i);
-                                changeScrolling(1);
-                            }
+                    if(resultFindAndReplace.foundPosition != -1) {
+                        int foundLineStart = backtrackToFirstAtomicInLine(activeSequence, resultFindAndReplace.foundPosition);
+                        if (foundLineStart >= 0) {
+                            jumpAbsoluteLineNumber(resultFindAndReplace.lineNumber, foundLineStart);
+                            cursorY = 0;
+                            cursorEndY = 0;
+                            cursorX = resultFindAndReplace.foundPosition - foundLineStart;
+                            cursorEndX = resultFindAndReplace.foundPosition - foundLineStart;
+                            refreshFlag = true;
                         }
-                        cursorX = resultFindAndReplace.foundPosition;
-                        cursorEndX = resultFindAndReplace.foundPosition;
                     }
                     currMenuState = NOT_IN_MENU;
                     refreshFlag = true; // Request full redraw after action
@@ -1562,9 +1547,11 @@ if (status == OK && wch == CTRL_KEY('y')) {
 =================
 */
 
-// Handle vertical scrolling
+/**
+* Handle vertical scrolling. Only used for +-1 scrolling when pressing Page UP/DOWN.
+*/
 void changeScrolling(int incrY){
-    DEBG_PRINT("[changeScrolling] screenTopLine=%d\n", screenTopLine);
+    DEBG_PRINT("[changeScrolling] gettopMostLineNbr=%d\n", gettopMostLineNbr);
     DEBG_PRINT("[changeScrolling] incrY=%d\n", incrY);
 
     if (incrY != 0) {
@@ -1580,10 +1567,9 @@ void changeScrolling(int incrY){
             if (incrY < 0) {
                 // Scroll up
                 DEBG_PRINT("changeScrolling scroll up\n");
-                if (screenTopLine > 0) { // Can't scroll up further when at the very top
+                if (gettopMostLineNbr > 0) { // Can't scroll up further when at the very top
                     cursorY++;
                     cursorEndY++;
-                    screenTopLine += incrY;
                     moveAbsoluteLineNumbers(activeSequence, -1);
                     refreshFlag = true;
                 }
@@ -1593,7 +1579,6 @@ void changeScrolling(int incrY){
                 if (0 < visibleLines) {
                     cursorY--;
                     cursorEndY--;
-                    screenTopLine += incrY;
                     moveAbsoluteLineNumbers(activeSequence, 1);
                     refreshFlag = true;
                 }
