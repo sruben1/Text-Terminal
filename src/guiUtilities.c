@@ -201,7 +201,8 @@ void debugPrintInternalLineStats(){
  */
 int getAbsoluteAtomicIndex(int relativeLine, int charColumn, Sequence* sequence){
     DEBG_PRINT("Calculating abs atomic index for: line%d, column%d...\n", relativeLine, charColumn);
-    debugPrintInternalLineStats();
+    //debugPrintInternalState(sequence, true, false);
+    //debugPrintInternalLineStats();
     // Check that request is valid in current data structure state: 
     for(int i = 0; i <= relativeLine; i++){
         if (lineStats.absolutePos[i] == -1){

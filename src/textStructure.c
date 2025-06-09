@@ -41,10 +41,10 @@ ReturnCode deleteUndoOption(Sequence *sequence, Position beginPosition, Position
 */
 
 LineBstd getCurrentLineBstd(){
-  return LINUX;
+  return _currLineB;
 }
 LineBidentifier getCurrentLineBidentifier(){
-  return LINUX_MSDOS_ID;
+  return _currLineBidentifier;
 }
 
 Sequence* empty(){
@@ -680,6 +680,7 @@ ReturnCode insertUndoOption(Sequence *sequence, Position position, wchar_t *text
       DEBG_PRINT("Insert now in optimized case.\n");
       // Simply increase the valid range of the node to now also encompass the new insertion as well:
       unsigned long byteSize = (unsigned long) getUtf8ByteSize(textToInsert);
+      DEBG_PRINT("Insert got byte size %d\n", byteSize);
       toExtend.node->size += byteSize;
 
       // Update statistics
@@ -725,6 +726,7 @@ ReturnCode insertUndoOption(Sequence *sequence, Position position, wchar_t *text
   newInsert->isInFileBuffer = false;
   newInsert->offset = newlyWrittenBufferOffset;
   newInsert->size = (long int) getUtf8ByteSize(textToInsert);
+  DEBG_PRINT("Insert got byte size %d\n", newInsert->size);
 
   // Find the node for the given position
   NodeResult nodeResult = getNodeForPosition(sequence, position);

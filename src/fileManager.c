@@ -38,7 +38,7 @@ ReturnCode replaceFileBufferInSeq(int fd, size_t fileSize, Sequence *seq);
 int simpleFileCopy(int sourceFd, int destFd,  size_t fileSize);
 
 
-LineBidentifier initSequenceFromOpenOrCreate(const char* pathname, Sequence* emptySequences, LineBidentifier lbStdForNewFile){
+LineBstd initSequenceFromOpenOrCreate(const char* pathname, Sequence* emptySequences, LineBstd lbStdForNewFile){
   if(_mainFileFd >= 0){
     ERR_PRINT("Error, Close currently open file first!\n");
     fprintf(stderr, "Error, Close currently open file first!\n");
@@ -76,7 +76,17 @@ LineBidentifier initSequenceFromOpenOrCreate(const char* pathname, Sequence* emp
     }
     DEBG_PRINT("MMAP done moving to next steps.\n");
 
-    lbStdForNewFile = findMostLikelyLineBreakStd(emptySequences);
+    LineBstd foundStd = findMostLikelyLineBreakStd(emptySequences);
+    if(foundStd == NO_INIT){
+      ERR_PRINT("failed to find lineBstd for file...\n");
+      if (lbStdForNewFile == NO_INIT){
+        ERR_PRINT("Aborting since no std specified\n");
+        fprintf(stderr, "Please specify a line break std in arguments for this file (could not identify it automatically).\n");
+      }
+    } else{
+      lbStdForNewFile = foundStd;
+    }
+
   } else{
     /*nothing to do since empty() already took care of null assignments to file buffer*/
   }

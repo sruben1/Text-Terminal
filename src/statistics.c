@@ -115,7 +115,43 @@ TextStatistics calculateStatsEffect(Sequence *sequence, DescriptorNode *startNod
 /**
  * Finds the lineBstd to use for new opening, by checking the file buffer for most common occurrence.
  */
-LineBidentifier findMostLikelyLineBreakStd(Sequence *sequence){
-    DEBG_PRINT("Decided on lineBstd:%d.\n", LINUX);
-    return LINUX;
+LineBstd findMostLikelyLineBreakStd(Sequence *sequence){
+    LineBstd toReturn = NO_INIT;
+
+    int linuxStdOccur = 0;
+    int msdosStdOccur = 0;
+    int macStdOccur = 0;
+    //DEBG_PRINT("Line b std analysis:\n");
+    for (int i = 0; i < sequence->fileBuffer.size; i++){
+        //DEBG_PRINT("%02x", (uint8_t) sequence->fileBuffer.data[i]);
+        switch (sequence->fileBuffer.data[i]){
+        case LINUX_MSDOS_ID:
+            if(i > 0 && sequence->fileBuffer.data[i-1] == '\r'){
+                msdosStdOccur++;
+            } else{
+                linuxStdOccur++;
+            }
+            break;
+
+        case MAC_ID:
+            //DEBG_PRINT("Mac case check.\n");
+            if((i+1) == sequence->fileBuffer.size || sequence->fileBuffer.data[i+1] != '\n'){
+                macStdOccur++;
+            }
+        }
+        //DEBG_PRINT("\n");
+    }
+    //DEBG_PRINT("Mac occur:%d, msdos:%d, linux:%d", macStdOccur, msdosStdOccur, linuxStdOccur);
+    if(linuxStdOccur > msdosStdOccur && linuxStdOccur > macStdOccur){
+        DEBG_PRINT("Decided on lineBstd: LINUX.\n");
+        return LINUX;
+    } else if (msdosStdOccur > macStdOccur && msdosStdOccur > linuxStdOccur){
+        DEBG_PRINT("Decided on lineBstd: MSDOS.\n");
+        return MSDOS;
+    } else if (macStdOccur > msdosStdOccur && macStdOccur > linuxStdOccur){
+        DEBG_PRINT("Decided on lineBstd:MAC.\n");
+        return MAC;
+    } else{
+        return NO_INIT;
+    }
 }

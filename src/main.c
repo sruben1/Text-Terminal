@@ -176,23 +176,34 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                 //DEBG_PRINT("found a line (or at the end of block)! current line count = %d \n", (currLineBcount +1));
                 //DEBG_PRINT("Number of UTF-8 chars in this line/end of block = %d \n",  nbrOfUtf8Chars);
                 
-                if( ((currentLineBreakStd == MSDOS) && ((currentSectionStart + offsetCounter) > 0) && (currentItemBlock[currentSectionStart + offsetCounter-1] != '\r'))){ // Might remove if it causes issues, MSDOS should also work if only check for '\n' characters ('\r' then simply not evaluated).
+                if( (currentLineBreakStd == MSDOS) && (currentItemBlock[currentSectionStart + offsetCounter] == '\n') && (((currentSectionStart + offsetCounter) == 0) || (((currentSectionStart + offsetCounter) > 0) && (currentItemBlock[currentSectionStart + offsetCounter-1] != '\r'))) ){ // Might remove if it causes issues, MSDOS should also work if only check for '\n' characters ('\r' then simply not evaluated).
                     /* Error case, lonely '\n' found despite '\r\n' current standard !*/
-                    ERR_PRINT("Warning case, lonely '\n' found despite \"\r\n\" current standard !\n");
+                    ERR_PRINT("Warning case, lonely '\\n' found despite \"\\r\\n\" current standard !\n");                    
                 }
                 wchar_t* lineToPrint = utf8_to_wchar(&currentItemBlock[currentSectionStart], offsetCounter+1, nbrOfUtf8Chars);
                 if (lineToPrint == NULL){
                     ERR_PRINT("utf_8 to Wchar conversion failed! ending here!\n");
                     return -1;
                 }
-                /*
+                // Fixes \r deleting all previous chars in the line:
+                if (currentLineBreakStd == MSDOS){
+                    size_t len = wcslen(lineToPrint);
+                    // Check if string ends with \r\n (CRLF)
+                    if (len >= 2 && lineToPrint[len-2] == L'\r' && lineToPrint[len-1] == L'\n') {
+                        DEBG_PRINT("Replaced \\r case");
+                        // Replace \r\n with \n\0
+                        lineToPrint[len-2] = L'\n';
+                        lineToPrint[len-1] = L'\0';
+                    }
+                }
+                
                 #ifdef DEBUG
                 // Basic test print to test backend:
                 DEBG_PRINT("section start = %d, Offset = %d \n", currentSectionStart, offsetCounter);
                 char* textContent = (char*)currentItemBlock;
                 DEBG_PRINT("~~~~~~~~~~~~~~~~~~\n");
                 for (size_t i = 0; lineToPrint[i] != L'\0'; i++) {
-                    if(lineToPrint[i] != L'\n'){
+                    if(lineToPrint[i] != L'\r' && lineToPrint[i] != L'\n'){
                         DEBG_PRINT("%lc", (uint32_t) lineToPrint[i]);
                     } else {
                         DEBG_PRINT("[\\n]");
@@ -204,7 +215,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                 }
                 DEBG_PRINT("\n~~~~~~~~~~~~~~~~~~\n");
                 #endif  
-                */
+                
                 if(currentItemBlock[currentSectionStart] != END_OF_TEXT_CHAR){
                     //print out line or block (could be either!!), interpreted as UTF-8 sequence:atomicsInLine:
                     DEBG_PRINT(">>>>>>Trying to print: line %d, at column %d\n", currLineBcount, nbrOfUtf8CharsNoControlCharsInLine);
@@ -213,7 +224,8 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                     // always cut off string at largest size... 
                     if ((nbrOfUtf8CharsNoControlCharsInLine - horizontalScroll + nbrOfUtf8Chars) > lastGuiWidth-1){
                         int calc = lastGuiWidth -1 + horizontalScroll -nbrOfUtf8CharsInLine;
-                        if(calc > 0 && calc < wcslen(lineToPrint)){
+                        if(calc > 1 && calc < wcslen(lineToPrint)){
+                            lineToPrint[calc-1] = L'\n';
                             lineToPrint[calc] = L'\0';
                             DEBG_PRINT("Cutoff the block at:%d\n", calc);
                         } else{
@@ -1391,7 +1403,7 @@ if (status == OK && wch == CTRL_KEY('y')) {
                             wcscpy(toInsert, L"");
                     }
                     
-                    DEBG_PRINT("Inserting line break at atomic position %d\n", atomicPos);
+                    DEBG_PRINT("Inserting line break at atomic:%d position with std:%d\n", atomicPos, getCurrentLineBstd());
 
                     if (insert(activeSequence, atomicPos, toInsert) > 0) {
                         // Exceptionally set it without safety in order to allow for leap of faith... 

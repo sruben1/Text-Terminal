@@ -3,7 +3,7 @@
 
 #include "textStructure.h"
 
-LineBidentifier initSequenceFromOpenOrCreate(const char* pathname, Sequence* emptySequences, LineBidentifier lbStdForNewFile);
+LineBstd initSequenceFromOpenOrCreate(const char* pathname, Sequence* emptySequences, LineBstd lbStdForNewFile);
 ReturnCode saveSequenceToOpenFile(Sequence* sequence);
 void closeAllFileResources(Sequence *seq);
 #endif
