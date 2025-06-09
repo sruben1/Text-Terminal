@@ -577,100 +577,116 @@ int check_button_click(int mouse_x, int mouse_y) {
 
 
 void handle_menu_input(wint_t wch, int status) {
-    DEBG_PRINT("Menu input: state=%d, wch=%d\n", currMenuState, wch);
-    if (currMenuState == NOT_IN_MENU) return;
-    
+
+    bool menu_needs_refresh = false;
+
+    // --- Handle Special Keys (Arrows, Backspace) ---
     if (status == KEY_CODE_YES) {
         switch (wch) {
             case KEY_LEFT:
                 if (menuCursor > 0) {
                     menuCursor--;
-                    refreshFlag = true;
+                    menu_needs_refresh = true;
                 }
                 break;
-                
-            case KEY_RIGHT:
-                if (currMenuState == FIND || currMenuState == F_AND_R1) {
-                    if (menuCursor < (int)wcslen(firstMenuInput)) {
-                        menuCursor++;
-                        refreshFlag = true;
-                    }
-                } else if (currMenuState == F_AND_R2) {
-                    if (menuCursor < (int)wcslen(secondMenuInput)) {
-                        menuCursor++;
-                        refreshFlag = true;
-                    }
+
+            case KEY_RIGHT: {
+                wchar_t* target_input = NULL;
+                if (currMenuState == FIND || currMenuState == FIND_CYCLE || currMenuState == F_AND_R1) {
+                    target_input = firstMenuInput;
+                } else if (currMenuState == F_AND_R2 || currMenuState == F_AND_R_CYCLE) {
+                    target_input = secondMenuInput;
+                }
+
+                if (target_input && menuCursor < (int)wcslen(target_input)) {
+                    menuCursor++;
+                    menu_needs_refresh = true;
                 }
                 break;
-                
+            }
+
             case KEY_BACKSPACE:
             case 8:
-            case 127:  // Also handle DEL key as backspace in menu
-                if (menuCursor > 0) {
-                    if (currMenuState == FIND || currMenuState == F_AND_R1) {
-                        // Remove character from firstMenuInput
-                        wmemmove(&firstMenuInput[menuCursor-1], &firstMenuInput[menuCursor], 
-                                wcslen(firstMenuInput) - menuCursor + 1);
-                    } else if (currMenuState == F_AND_R2) {
-                        // Remove character from secondMenuInput
-                        wmemmove(&secondMenuInput[menuCursor-1], &secondMenuInput[menuCursor], 
-                                wcslen(secondMenuInput) - menuCursor + 1);
-                    }
+            case 127: {
+                wchar_t* target_input = NULL;
+                if (currMenuState == FIND || currMenuState == FIND_CYCLE || currMenuState == F_AND_R1) {
+                    target_input = firstMenuInput;
+                } else if (currMenuState == F_AND_R2 || currMenuState == F_AND_R_CYCLE) {
+                    target_input = secondMenuInput;
+                }
+
+                if (target_input && menuCursor > 0) {
+                    wmemmove(&target_input[menuCursor - 1], &target_input[menuCursor],
+                             wcslen(target_input) - menuCursor + 1); 
                     menuCursor--;
-                    refreshFlag = true;
+                    menu_needs_refresh = true;
                 }
                 break;
+            }
         }
-    } else if (status == OK) {
+    }
+    else if (status == OK) {
         switch (wch) {
-            case 27: // Escape key
+            case 27: // Escape key: exit menu mode
                 currMenuState = NOT_IN_MENU;
-                refreshFlag = true;
+                refreshFlag = true; // Request a full redraw to erase menu UI
                 break;
-                
+
             case KEY_ENTER:
             case 10:
-            case 13:
-                if (currMenuState == FIND) {
-                    // TODO: Implement search functionality using firstMenuInput
+            case 13: // Enter key: transition menu state or execute action
+                if (currMenuState == FIND || currMenuState == FIND_CYCLE) {
                     DEBG_PRINT("Searching for: %ls\n", firstMenuInput);
+                    // TODO: Implement search functionality
                     currMenuState = NOT_IN_MENU;
-                    refreshFlag = true;
+                    refreshFlag = true; // Request full redraw after action
                 } else if (currMenuState == F_AND_R1) {
+                    // Move from "Find" to "Replace" field
                     currMenuState = F_AND_R2;
                     menuCursor = 0;
-                    refreshFlag = true;
-                } else if (currMenuState == F_AND_R2) {
-                    // TODO: Implement find and replace functionality
+                    menu_needs_refresh = true;
+                } else if (currMenuState == F_AND_R2 || currMenuState == F_AND_R_CYCLE) {
                     DEBG_PRINT("Find: %ls, Replace: %ls\n", firstMenuInput, secondMenuInput);
+                    // TODO: Implement find and replace functionality
                     currMenuState = NOT_IN_MENU;
-                    refreshFlag = true;
+                    refreshFlag = true; // Request full redraw after action
                 }
                 break;
-                
-            default:
-                // Handle regular character input
+
+            default: // --- Printable character input ---
                 if (is_printable_unicode(wch)) {
                     wchar_t* target_input = NULL;
                     int max_len = MAX_MENU_INPUT - 1;
-                    
-                    if (currMenuState == FIND || currMenuState == F_AND_R1) {
+
+                    if (currMenuState == FIND || currMenuState == FIND_CYCLE || currMenuState == F_AND_R1) {
                         target_input = firstMenuInput;
-                    } else if (currMenuState == F_AND_R2) {
+                    } else if (currMenuState == F_AND_R2 || currMenuState == F_AND_R_CYCLE) {
                         target_input = secondMenuInput;
                     }
-                    
+
                     if (target_input && (int)wcslen(target_input) < max_len) {
-                        // Insert character at cursor position
-                        wmemmove(&target_input[menuCursor+1], &target_input[menuCursor], 
-                                wcslen(target_input) - menuCursor + 1);
+                        int len = wcslen(target_input);
+
+                        // Manually shift characters to the right to make space
+                        for (int i = len; i >= menuCursor; i--) {
+                            target_input[i + 1] = target_input[i];
+                        }
+                        // Insert the new character
                         target_input[menuCursor] = (wchar_t)wch;
+
                         menuCursor++;
-                        refreshFlag = true;
+                        menu_needs_refresh = true;
                     }
                 }
                 break;
         }
+    }
+
+    if (menu_needs_refresh) {
+        draw_buttons();
+        draw_menu_interface();
+        
+        refresh();
     }
 }
 
