@@ -1173,16 +1173,8 @@ void process_input(void) {
             refreshFlag = true;
             setLineStatsNotUpdated();
             
-            if (lastGuiHeight >= MENU_HEIGHT) {
-                mvprintw(lastGuiHeight - 2, 0, "Text pasted   Ctrl-l to quit");
-                refresh();
-            }
         } else {
             ERR_PRINT("Failed to paste from clipboard\n");
-            if (lastGuiHeight >= MENU_HEIGHT) {
-                mvprintw(lastGuiHeight - 2, 0, "Paste failed   Ctrl-l to quit");
-                refresh();
-            }
         }
     }
 
@@ -1192,16 +1184,8 @@ if (status == OK && wch == CTRL_KEY('y')) {
     if (copySelectionToClipboard(activeSequence) > 0) {
         DEBG_PRINT("Copy successful\n");
         
-        if (lastGuiHeight >= MENU_HEIGHT) {
-            mvprintw(lastGuiHeight - 2, 0, "Text copied   Ctrl-l to quit ");
-            refresh();
-        }
     } else {
         ERR_PRINT("Failed to copy to clipboard\n");
-        if (lastGuiHeight >= MENU_HEIGHT) {
-            mvprintw(lastGuiHeight - 2, 0, "Copy failed   Ctrl-l to quit ");
-            refresh();
-        }
     }
 }
 
