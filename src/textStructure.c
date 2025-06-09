@@ -33,6 +33,7 @@ int textMatchesBuffer(Sequence *sequence, DescriptorNode *node, int offset, Atom
 int getLineNumber(Sequence *sequence, Position position);
 ReturnCode insertUndoOption(Sequence *sequence, Position position, wchar_t *textToInsert, Operation *previousOperation);
 ReturnCode deleteUndoOption(Sequence *sequence, Position beginPosition, Position endPosition, Operation *previousOperation);
+SearchResult findAndReplaceUndoOption(Sequence *sequence, wchar_t *textToFind, wchar_t *textToReplace, Position startPosition, Operation *previousOperation);
 
 /*
 =========================
@@ -1063,11 +1064,31 @@ SearchResult find(Sequence *sequence, wchar_t *textToFind, Position startPositio
 }
 
 SearchResult findAndReplace(Sequence *sequence, wchar_t *textToFind, wchar_t *textToReplace, Position startPosition) {
+    return findAndReplaceUndoOption(sequence, textToFind, textToReplace, startPosition, NULL);
+}
+
+SearchResult findAndReplaceAll(Sequence *sequence, wchar_t *textToFind, wchar_t *textToReplace, Position startPosition) {
+    SearchResult result = findAndReplace(sequence, textToFind, textToReplace, startPosition);
+    SearchResult lastResult = result;
+    Operation *previousOperation;
+
+    while (lastResult.foundPosition != -1) {
+        Operation *previousOperation = getOperation(sequence->undoStack);
+        lastResult = findAndReplaceUndoOption(sequence, textToFind, textToReplace, lastResult.foundPosition + getUtf8ByteSize(textToReplace), previousOperation);
+    }
+    DEBG_PRINT("No more matches found for '%ls'.\n", textToFind);
+    return result; 
+}
+
+/**
+ * Find and replace with the option to link to a previous operation for bundled undo.
+ */
+SearchResult findAndReplaceUndoOption(Sequence *sequence, wchar_t *textToFind, wchar_t *textToReplace, Position startPosition, Operation *previousOperation) {
     SearchResult result = find(sequence, textToFind, startPosition);
 
     if (result.foundPosition != -1) { // Match found
         DEBG_PRINT("Found match at position %d, replacing with '%ls'.\n", result.foundPosition, textToReplace);
-        ReturnCode deleteResult = deleteUndoOption(sequence, result.foundPosition, result.foundPosition + getUtf8ByteSize(textToFind) - 1, NULL);
+        ReturnCode deleteResult = deleteUndoOption(sequence, result.foundPosition, result.foundPosition + getUtf8ByteSize(textToFind) - 1, previousOperation);
         DEBG_PRINT("Undo stack size after delete: %d\n", getOperationStackSize(sequence->undoStack));
 
         if (deleteResult == 1) {

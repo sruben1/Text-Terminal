@@ -194,7 +194,14 @@ SearchResult find(Sequence *sequence, wchar_t *textToFind, Position startPositio
  * The first occurence after startPosition (inclusive) is deleted and replaced with the specified replacement text.
  * Returns the SearchResult for the first character that has been replaced, or -1 if no match was found.
  */
-SearchResult findAndReplace(Sequence *sequence, wchar_t *textToFind, wchar_t *textToReplace, Position startPosition); /* textToFind, textToReplace: nullterminated strings of wide chars, startPosition: position to start searching from */
+SearchResult findAndReplace(Sequence *sequence, wchar_t *textToFind, wchar_t *textToReplace, Position startPosition);
+
+/**
+ * Searches for a given text (nullterminated string of wide chars) in the sequence.
+ * All occurrences are replaced with the specified replacement text.
+ * Returns the SearchResult for the first character after startPosition (inclusive) that has been replaced, or -1 if no match was found.
+ */
+SearchResult findAndReplaceAll(Sequence *sequence, wchar_t *textToFind, wchar_t *textToReplace, Position startPosition);
 
 /*
 =========================
