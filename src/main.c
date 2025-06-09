@@ -688,7 +688,7 @@ void handle_menu_input(wint_t wch, int status) {
             case KEY_ENTER:
             case 10:
             case 13: // Enter key: transition menu state or execute action
-                int cursorForFind = getAbsoluteAtomicIndex(cursorY, cursorX+1, activeSequence)+1;
+                int cursorForFind = getAbsoluteAtomicIndex(cursorY, cursorX+1, activeSequence);
                 DEBG_PRINT("lastAtomic test: %d", getAbsoluteAtomicIndex(cursorY, cursorX+1, activeSequence));
                 if(getAbsoluteAtomicIndex(cursorY, cursorX+1, activeSequence) == -1){
                         cursorForFind = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
