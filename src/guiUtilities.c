@@ -88,6 +88,13 @@ ReturnCode updateLine(int relativeLineNumber, int absoluteGeneralAtomicPosition 
 }
 
 /**
+ * Get Line number at the top of the screen.
+ */
+int gettopMostLineNbr(){
+    return lineStats.topMostLineNbr;
+}
+
+/**
  * Function to call when scrolling.
  *  requires full update of statistics afterwards since operation invalidates internal state,
  *  except for first relative screen line due to need of leap of faith. 

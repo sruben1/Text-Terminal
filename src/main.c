@@ -71,7 +71,7 @@ void close_editor(void);
 void checkSizeChanged(void);
 void process_input(void);
 bool is_printable_unicode(wint_t wch);
-void changeScrolling(int incrY, bool enterKey);
+void changeScrolling(int incrY);
 
 // Regular cursor mode:
 void changeAndupdateCursorAndMenu(int incrX, int incrY);
@@ -249,6 +249,55 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                         DEBG_PRINT("skipping print due to horiz scroll:  %d < %d + %d\n", horizontalScroll, nbrOfUtf8CharsNoControlCharsInLine, nbrOfUtf8CharsNoControlChars);
                     }
 
+                    
+                    // Calculate the actual display position and length
+                    int displayStartCol = nbrOfUtf8CharsNoControlCharsInLine - horizontalScroll;
+                    if (displayStartCol < 0) displayStartCol = 0;
+                    
+                    // Calculate how much of the string to display
+                    int availableWidth = lastGuiWidth - displayStartCol;
+                    if (availableWidth <= 0) {
+                        // Nothing to display on this line
+                        DEBG_PRINT("Line completely scrolled off screen\n");
+                    } else {
+                        // Determine the substring to print
+                        wchar_t* printStr = lineToPrint;
+                        int printLen = wcslen(lineToPrint);
+                        
+                        // Handle horizontal scrolling offset within the string
+                        int stringOffset = 0;
+                        if (horizontalScroll > nbrOfUtf8CharsNoControlCharsInLine) {
+                            stringOffset = horizontalScroll - nbrOfUtf8CharsNoControlCharsInLine;
+                            if (stringOffset >= printLen) {
+                                stringOffset = printLen;
+                                printLen = 0;
+                            } else {
+                                printStr += stringOffset;
+                                printLen -= stringOffset;
+                            }
+                        }
+                        
+                        // Truncate if too long for available width
+                        if (printLen > availableWidth) {
+                            printLen = availableWidth;
+                        }
+                        
+                        // Only print if we have something to print
+                        if (printLen > 0) {
+                            // Temporarily null-terminate the string for printing
+                            wchar_t originalChar = printStr[printLen];
+                            printStr[printLen] = L'\0';
+                            
+                            // Clear any existing attributes before printing
+                            attrset(A_NORMAL);
+                            mvaddwstr(currLineBcount, displayStartCol, printStr);
+                            
+                            // Restore the original character
+                            printStr[printLen] = originalChar;
+                            
+                            DEBG_PRINT("Printed line at row %d, col %d: length %d\n", currLineBcount, displayStartCol, printLen);
+                        }
+                    }
                 }
 
                 /* reset&setup for next block/line iteration: */
@@ -261,12 +310,6 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
 
                     // Save in the line stats (from variables) into dedicated management structure:
                     updateLine(currLineBcount, frozenLineStart, nbrOfUtf8CharsNoControlCharsInLine);
-
-
-                    if (sinceHorizScrollCounter == 0){ 
-                        DEBG_PRINT("Printed empty");
-                        mvwaddwstr(stdscr, currLineBcount, 0, L"");
-                    }
 
                     currLineBcount++;
 
@@ -592,100 +635,152 @@ int check_button_click(int mouse_x, int mouse_y) {
 
 
 void handle_menu_input(wint_t wch, int status) {
-    DEBG_PRINT("Menu input: state=%d, wch=%d\n", currMenuState, wch);
-    if (currMenuState == NOT_IN_MENU) return;
-    
+
+    bool menu_needs_refresh = false;
+
+    // --- Handle Special Keys (Arrows, Backspace) ---
     if (status == KEY_CODE_YES) {
         switch (wch) {
             case KEY_LEFT:
                 if (menuCursor > 0) {
                     menuCursor--;
-                    refreshFlag = true;
+                    menu_needs_refresh = true;
                 }
                 break;
-                
-            case KEY_RIGHT:
-                if (currMenuState == FIND || currMenuState == F_AND_R1) {
-                    if (menuCursor < (int)wcslen(firstMenuInput)) {
-                        menuCursor++;
-                        refreshFlag = true;
-                    }
-                } else if (currMenuState == F_AND_R2) {
-                    if (menuCursor < (int)wcslen(secondMenuInput)) {
-                        menuCursor++;
-                        refreshFlag = true;
-                    }
+
+            case KEY_RIGHT: {
+                wchar_t* target_input = NULL;
+                if (currMenuState == FIND || currMenuState == FIND_CYCLE || currMenuState == F_AND_R1) {
+                    target_input = firstMenuInput;
+                } else if (currMenuState == F_AND_R2 || currMenuState == F_AND_R_CYCLE) {
+                    target_input = secondMenuInput;
+                }
+
+                if (target_input && menuCursor < (int)wcslen(target_input)) {
+                    menuCursor++;
+                    menu_needs_refresh = true;
                 }
                 break;
-                
+            }
+
             case KEY_BACKSPACE:
             case 8:
-            case 127:  // Also handle DEL key as backspace in menu
-                if (menuCursor > 0) {
-                    if (currMenuState == FIND || currMenuState == F_AND_R1) {
-                        // Remove character from firstMenuInput
-                        wmemmove(&firstMenuInput[menuCursor-1], &firstMenuInput[menuCursor], 
-                                wcslen(firstMenuInput) - menuCursor + 1);
-                    } else if (currMenuState == F_AND_R2) {
-                        // Remove character from secondMenuInput
-                        wmemmove(&secondMenuInput[menuCursor-1], &secondMenuInput[menuCursor], 
-                                wcslen(secondMenuInput) - menuCursor + 1);
-                    }
+            case 127: {
+                wchar_t* target_input = NULL;
+                if (currMenuState == FIND || currMenuState == FIND_CYCLE || currMenuState == F_AND_R1) {
+                    target_input = firstMenuInput;
+                } else if (currMenuState == F_AND_R2 || currMenuState == F_AND_R_CYCLE) {
+                    target_input = secondMenuInput;
+                }
+
+                if (target_input && menuCursor > 0) {
+                    wmemmove(&target_input[menuCursor - 1], &target_input[menuCursor],
+                             wcslen(target_input) - menuCursor + 1); 
                     menuCursor--;
-                    refreshFlag = true;
+                    menu_needs_refresh = true;
                 }
                 break;
+            }
         }
-    } else if (status == OK) {
+    }
+    else if (status == OK) {
         switch (wch) {
-            case 27: // Escape key
+            case 27: // Escape key: exit menu mode
                 currMenuState = NOT_IN_MENU;
-                refreshFlag = true;
+                refreshFlag = true; // Request a full redraw to erase menu UI
                 break;
-                
+
             case KEY_ENTER:
             case 10:
-            case 13:
-                if (currMenuState == FIND) {
-                    // TODO: Implement search functionality using firstMenuInput
+            case 13: // Enter key: transition menu state or execute action
+                if (currMenuState == FIND || currMenuState == FIND_CYCLE) {
                     DEBG_PRINT("Searching for: %ls\n", firstMenuInput);
+                    // TODO: Implement search functionality
+                    SearchResult resultFind = find(activeSequence, firstMenuInput, 0);
+                    DEBG_PRINT("Find results: resultFind.lineNumber=%d, resultFind.foundPosition=%d\n", resultFind.lineNumber, resultFind.foundPosition);
+                    if(resultFind.foundPosition != -1){
+                        DEBG_PRINT("Find results: screenTopLine=%d\n", screenTopLine);
+                        if(resultFind.lineNumber - screenTopLine < 0){
+                            for(int i=0; i>resultFind.lineNumber - screenTopLine; i--){
+                                DEBG_PRINT("Find down loop: lineNumber-screenTopLine=%d, i=%d\n",resultFind.lineNumber - screenTopLine, i);
+                                changeScrolling(-1);
+                            }
+                        }else if (resultFind.lineNumber - screenTopLine > 0){
+                            for(int i=0; i<resultFind.lineNumber - screenTopLine; i++){
+                                DEBG_PRINT("Find down loop: lineNumber-screenTopLine=%d, i=%d\n",resultFind.lineNumber - screenTopLine, i);
+                                changeScrolling(1);
+                            }
+                        }
+                        cursorX = resultFind.foundPosition;
+                        cursorEndX = resultFind.foundPosition;
+                    }
                     currMenuState = NOT_IN_MENU;
-                    refreshFlag = true;
+                    refreshFlag = true; // Request full redraw after action
                 } else if (currMenuState == F_AND_R1) {
+                    // Move from "Find" to "Replace" field
                     currMenuState = F_AND_R2;
                     menuCursor = 0;
-                    refreshFlag = true;
-                } else if (currMenuState == F_AND_R2) {
-                    // TODO: Implement find and replace functionality
+                    menu_needs_refresh = true;
+                } else if (currMenuState == F_AND_R2 || currMenuState == F_AND_R_CYCLE) {
                     DEBG_PRINT("Find: %ls, Replace: %ls\n", firstMenuInput, secondMenuInput);
+                    // TODO: Implement find and replace functionality
+                    SearchResult resultFindAndReplace = findAndReplace(activeSequence, firstMenuInput, secondMenuInput, 0);
+                    DEBG_PRINT("Find and Replace results: resultFindAndReplace.lineNumber=%d, resultFindAndReplace.foundPosition=%d\n", resultFindAndReplace.lineNumber, resultFindAndReplace.foundPosition);
+                    if(resultFindAndReplace.foundPosition != -1){
+                        DEBG_PRINT("Find results: screenTopLine=%d\n", screenTopLine);
+                        if(resultFindAndReplace.lineNumber - screenTopLine < 0){
+                            for(int i=0; i>resultFindAndReplace.lineNumber - screenTopLine; i--){
+                                DEBG_PRINT("Find&Replace down loop: lineNumber-screenTopLine=%d, i=%d\n",resultFindAndReplace.lineNumber - screenTopLine, i);
+                                changeScrolling(-1);
+                            }
+                        } else if(resultFindAndReplace.lineNumber - screenTopLine > 0){
+                            for(int i=0; i<resultFindAndReplace.lineNumber - screenTopLine; i++){
+                                DEBG_PRINT("Find&Replace down loop: lineNumber-screenTopLine=%d, i=%d\n",resultFindAndReplace.lineNumber - screenTopLine, i);
+                                changeScrolling(1);
+                            }
+                        }
+                        cursorX = resultFindAndReplace.foundPosition;
+                        cursorEndX = resultFindAndReplace.foundPosition;
+                    }
                     currMenuState = NOT_IN_MENU;
-                    refreshFlag = true;
+                    refreshFlag = true; // Request full redraw after action
                 }
                 break;
-                
-            default:
-                // Handle regular character input
+
+            default: // --- Printable character input ---
                 if (is_printable_unicode(wch)) {
                     wchar_t* target_input = NULL;
                     int max_len = MAX_MENU_INPUT - 1;
-                    
-                    if (currMenuState == FIND || currMenuState == F_AND_R1) {
+
+                    if (currMenuState == FIND || currMenuState == FIND_CYCLE || currMenuState == F_AND_R1) {
                         target_input = firstMenuInput;
-                    } else if (currMenuState == F_AND_R2) {
+                    } else if (currMenuState == F_AND_R2 || currMenuState == F_AND_R_CYCLE) {
                         target_input = secondMenuInput;
                     }
-                    
+
                     if (target_input && (int)wcslen(target_input) < max_len) {
-                        // Insert character at cursor position
-                        wmemmove(&target_input[menuCursor+1], &target_input[menuCursor], 
-                                wcslen(target_input) - menuCursor + 1);
+                        int len = wcslen(target_input);
+
+                        // Manually shift characters to the right to make space
+                        for (int i = len; i >= menuCursor; i--) {
+                            target_input[i + 1] = target_input[i];
+                        }
+                        // Insert the new character
                         target_input[menuCursor] = (wchar_t)wch;
+
                         menuCursor++;
-                        refreshFlag = true;
+                        menu_needs_refresh = true;
                     }
                 }
                 break;
         }
+    }
+
+    if (menu_needs_refresh) {
+        draw_buttons();
+        draw_menu_interface();
+        
+        refresh();
     }
 }
 
@@ -1233,12 +1328,10 @@ if (status == OK && wch == CTRL_KEY('y')) {
                 changeRangeEndAndUpdate(-1,0);
                 break;
             case KEY_NPAGE: // Page up as select up
-                //changeRangeEndAndUpdate(0,1);
-                changeScrolling(1, false);
+                changeScrolling(1);
                 break;
             case KEY_PPAGE: // Page down as select down
-                //changeRangeEndAndUpdate(0,-1);
-                changeScrolling(-1, false);
+                changeScrolling(-1);
                 break;
              /*---- Backspace & Delete ----*/
             case KEY_BACKSPACE: // Backspace
@@ -1410,7 +1503,6 @@ if (status == OK && wch == CTRL_KEY('y')) {
                         cursorX = 0;
                         cursorY++;
                         resetRangeSelectionState();
-                        //changeScrolling(1, true);
                         DEBG_PRINT("After Enter: cursor moved to (%d, %d)\n", cursorY, cursorX);
                     } else {
                         ERR_PRINT("Failed to insert line break\n");
@@ -1472,8 +1564,9 @@ if (status == OK && wch == CTRL_KEY('y')) {
 */
 
 // Handle vertical scrolling
-void changeScrolling(int incrY, bool enterKey){
-    int newY = cursorY + incrY;
+void changeScrolling(int incrY){
+    DEBG_PRINT("[changeScrolling] screenTopLine=%d\n", screenTopLine);
+    DEBG_PRINT("[changeScrolling] incrY=%d\n", incrY);
 
     if (incrY != 0) {
         DEBG_PRINT("changeScrolling in if statement (incrY != 0)\n");
@@ -1484,42 +1577,28 @@ void changeScrolling(int incrY, bool enterKey){
         int visibleLines = lastGuiHeight - MENU_HEIGHT; // Lines on screen
         if (visibleLines < 0) {
             // Not enough space for text display
-            newY = 0;
         } else {
             if (incrY < 0) {
                 // Scroll up
                 DEBG_PRINT("changeScrolling scroll up\n");
                 if (screenTopLine > 0) { // Can't scroll up further when at the very top
-                    screenTopLine--;
                     cursorY++;
                     cursorEndY++;
+                    screenTopLine += incrY;
                     moveAbsoluteLineNumbers(activeSequence, -1);
-                    newY = 0;
                     refreshFlag = true;
-                } else {
-                    newY = 0;
                 }
-            } else if (incrY > 0 && enterKey == false) {
+            } else if (incrY > 0) {
                 // Scroll down
                 DEBG_PRINT("changeScrolling scroll down\n");
                 if (0 < visibleLines) {
-                    screenTopLine++;
                     cursorY--;
                     cursorEndY--;
+                    screenTopLine += incrY;
                     moveAbsoluteLineNumbers(activeSequence, 1);
-                    newY = visibleLines - 1;
                     refreshFlag = true;
-                } else {
-                    newY = visibleLines - 1;
                 }
-            } //else if (enterKey == true && cursorY == visibleLines){
-                // Scroll down
-                //DEBG_PRINT("changeScrolling scroll down with enter key\n");
-                //screenTopLine++;
-                //moveAbsoluteLineNumbers(activeSequence, 1);
-                //newY = visibleLines - 1;
-                //refreshFlag = true;
-            //}
+            }
         }
     }
 }
@@ -1558,6 +1637,7 @@ void relocateAndupdateCursorAndMenu(int newX, int newY){
  */
 void relocateCursorNoUpdate(int newX, int newY){
     if (currMenuState != NOT_IN_MENU){
+
         if(currMenuState == FIND || currMenuState == F_AND_R1){
             if(newX < wcslen(firstMenuInput) && newX >= 0){
                 menuCursor = newX;
@@ -1570,7 +1650,6 @@ void relocateCursorNoUpdate(int newX, int newY){
             //Exit menu mode since interrupted
             currMenuState = NOT_IN_MENU;
         }
-        updateCursorAndMenu();
         return;
     }
     bool changedY = !(cursorY == newY);
@@ -1631,7 +1710,6 @@ void relocateCursorNoUpdate(int newX, int newY){
     }
     resetRangeSelectionState();
 }
-
 /* ----- Change cursor selection range -----*/
 
 /**
@@ -1705,6 +1783,9 @@ void relocateRangeEndAndUpdate(int newX, int newY){
  * Returns true if updated.
  */
 bool autoAdjustHorizontalScrolling(bool forEndCursor){
+    if (currMenuState != NOT_IN_MENU) {
+        return false;
+    }
     int currHorizScroll = getCurrHorizontalScrollOffset();
     int newHorizScroll = 0;
 
@@ -1826,7 +1907,7 @@ void updateCursorAndMenu(){
         }
     } else {
         autoAdjustHorizontalScrolling(true);
-
+            
         int startX = -1, startY = -1, endX = -1, endY = -1;
         getCurrentSelectionRang(&startX, &endX, &startY, &endY);
         if (startY == endY){
