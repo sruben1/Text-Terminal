@@ -699,7 +699,7 @@ ReturnCode insertUndoOption(Sequence *sequence, Position position, wchar_t *text
             operation->oldNext = NULL;               // Not used in optimized case
             operation->last = NULL;
             operation->oldPrev = NULL;
-            if (pushOperation(sequence->undoStack, operation) == 0) {
+            if (previousOperation == NULL && pushOperation(sequence->undoStack, operation) == 0) {
                 ERR_PRINT("Failed to push insert operation onto undo stack.\n");
                 free(operation);
                 return -1; // Error
@@ -761,7 +761,7 @@ ReturnCode insertUndoOption(Sequence *sequence, Position position, wchar_t *text
         operation->previous = previousOperation; // Link to the previous operation if any
         operation->optimizedCase = 0;            // Not an optimized case
         operation->optimizedCaseSize = 0;        // Not used in this case
-        if (pushOperation(sequence->undoStack, operation) == 0) {
+        if (previousOperation == NULL && pushOperation(sequence->undoStack, operation) == 0) {
             ERR_PRINT("Failed to push insert operation onto undo stack.\n");
             free(newInsert);
             free(operation);
@@ -821,7 +821,7 @@ ReturnCode insertUndoOption(Sequence *sequence, Position position, wchar_t *text
         operation->previous = previousOperation; // Link to the previous operation if any
         operation->optimizedCase = 0;            // Not an optimized case
         operation->optimizedCaseSize = 0;        // Not used in this case
-        if (pushOperation(sequence->undoStack, operation) == 0) {
+        if (previousOperation == NULL && pushOperation(sequence->undoStack, operation) == 0) {
             ERR_PRINT("Failed to push insert operation onto undo stack.\n");
             free(newInsert);
             free(firstPart);
@@ -924,7 +924,7 @@ ReturnCode deleteUndoOption(Sequence *sequence, Position beginPosition, Position
     operation->previous = previousOperation; // Link to the previous operation if any
     operation->optimizedCase = 0;            // Not an optimized case
     operation->optimizedCaseSize = 0;        // Not used in this case
-    if (pushOperation(sequence->undoStack, operation) == 0) {
+    if (previousOperation == NULL && pushOperation(sequence->undoStack, operation) == 0) {
         ERR_PRINT("Failed to push delete operation onto undo stack.\n");
         free(operation);
         return -1; // Error
@@ -1068,10 +1068,12 @@ SearchResult findAndReplace(Sequence *sequence, wchar_t *textToFind, wchar_t *te
     if (result.foundPosition != -1) { // Match found
         DEBG_PRINT("Found match at position %d, replacing with '%ls'.\n", result.foundPosition, textToReplace);
         ReturnCode deleteResult = deleteUndoOption(sequence, result.foundPosition, result.foundPosition + getUtf8ByteSize(textToFind) - 1, NULL);
+        DEBG_PRINT("Undo stack size after delete: %d\n", getOperationStackSize(sequence->undoStack));
 
         if (deleteResult == 1) {
             Operation *previousOperation = getOperation(sequence->undoStack);
             ReturnCode insertResult = insertUndoOption(sequence, result.foundPosition, textToReplace, previousOperation);
+            DEBG_PRINT("Undo stack size after insert: %d\n", getOperationStackSize(sequence->undoStack));
             if (insertResult == 1) {
                 return result; // Return the search result with the found position and line number
             } else {
