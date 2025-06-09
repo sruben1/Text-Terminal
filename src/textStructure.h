@@ -156,7 +156,7 @@ Size getItemBlock(Sequence *sequence, Position position, Atomic **returnedItemBl
 int getCurrentWordCount(Sequence *sequence);
 int getCurrentLineCount(Sequence *sequence);
 int backtrackToFirstAtomicInLine(Sequence *sequence, Position position);
-int getCurrentTotalSize(Sequence *sequence);
+size_t getCurrentTotalSize(Sequence *sequence);
 
 /**
  * Returns the position of the first atomic in the line that contains the specified position.

@@ -35,7 +35,7 @@ ReturnCode writeSequenceToMapping(Atomic* writeMapping, size_t newSize, size_t n
 ReturnCode resizeFileAndMapping(int fd, void** mapping, size_t currentSize, size_t currentAlignedSize, size_t newSize, size_t newAlignedSize);
 void handler(int sig, siginfo_t *info, void *ucontext);
 ReturnCode replaceFileBufferInSeq(int fd, size_t fileSize, Sequence *seq);
-int simpleFileCopy(int sourceFd, int destFd,  size_t fileSize);
+size_t simpleFileCopy(int sourceFd, int destFd,  size_t fileSize);
 
 
 LineBstd initSequenceFromOpenOrCreate(const char* pathname, Sequence* emptySequences, LineBstd lbStdForNewFile){
@@ -67,10 +67,9 @@ LineBstd initSequenceFromOpenOrCreate(const char* pathname, Sequence* emptySeque
     ERR_PRINT("Failed to read stats form file: %s\n", strerror(errno));
     return -1;
   }
-  size_t fileSize = (size_t) buffer.st_size;
 
-  if (fileSize > 0){
-    if(replaceFileBufferInSeq(_mainFileFd, fileSize, emptySequences) < 0){
+  if (buffer.st_size > 0){
+    if(replaceFileBufferInSeq(_mainFileFd, buffer.st_size, emptySequences) < 0){
       ERR_PRINT("Failed to init MMAP into sequence structure.\n");
       return -1;
     }
@@ -132,14 +131,15 @@ ReturnCode saveSequenceToOpenFile(Sequence* sequence) {
     }
 
     off_t offset = 0;
-    ssize_t copied = simpleFileCopy(_mainFileFd, _internalOriginalFileCopyFd, mainFileStat.st_size);
+    size_t copied = simpleFileCopy(_mainFileFd, _internalOriginalFileCopyFd, mainFileStat.st_size);
     // copy_file_range(_mainFileFd, &offset, _internalOriginalFileCopyFd, NULL, mainFileStat.st_size, 0);
     // if (copied < 0 && errno == EXDEV){ // WSL fallback
     //   ERR_PRINT("Failed to use special linux copy: %s ; using fall back method instead.\n", strerror(errno));
     //   copied = 
     // }
+  
     if (copied != mainFileStat.st_size) {
-      ERR_PRINT("Failed to create complete copy of original (copied %d), aborting backup and save: %s\n", copied, strerror(errno));
+      ERR_PRINT("Failed to create complete copy of original (copied %ld != %ld), aborting backup and save: %s\n", (long int) copied, (long int) mainFileStat.st_size, strerror(errno));
       return -1;
     }
 
@@ -173,7 +173,7 @@ ReturnCode saveSequenceToOpenFile(Sequence* sequence) {
     DEBG_PRINT("Starting needed temp copy of actual file...\n");
     // Copy save file to backup
     off_t offset = 0;
-    ssize_t copied = simpleFileCopy(_mainFileFd, backupFd, mainFileStat.st_size);
+    size_t copied = simpleFileCopy(_mainFileFd, backupFd, mainFileStat.st_size);
     // copy_file_range(_mainFileFd, &offset, backupFd, NULL, mainFileStat.st_size, 0);
     // if (copied < 0 && errno == EXDEV){ // WSL fallback
     //   ERR_PRINT("Failed to use special linux copy: %s ; using fall back method instead.\n", strerror(errno));
@@ -280,17 +280,41 @@ ReturnCode replaceFileBufferInSeq(int fd, size_t fileSize, Sequence *seq){
 /**
  * WSL compatible (fallback) file copy.
  */
-int simpleFileCopy(int sourceFd, int destFd, size_t fileSize) {
+size_t simpleFileCopy(int sourceFd, int destFd, size_t fileSize) {
   // Ensure files ready for operation
   if (lseek(sourceFd, 0, SEEK_SET) < 0 || lseek(destFd, 0, SEEK_SET) < 0) {
     return -1;
   }
   
-  // Perform actual copy operation
-  off_t offset = 0;
-  ssize_t copied = sendfile(destFd, sourceFd, &offset, fileSize);
+  size_t totalCopied = 0;
+  const size_t MAX_CHUNK_SIZE = 1024 * 1024 * 1024; // 64MB chunks
   
-  return (int) copied;
+  // Perform actual copy operations
+  while (totalCopied < fileSize) {
+    size_t remainingBytes = fileSize - totalCopied;
+    size_t bytesToCopy = (remainingBytes > MAX_CHUNK_SIZE) ? MAX_CHUNK_SIZE : remainingBytes;
+    
+    off_t offset = totalCopied;
+    ssize_t copied = sendfile(destFd, sourceFd, &offset, bytesToCopy);
+    
+    if (copied < 0) {
+      // If sendfile failed
+      ERR_PRINT("sendfile failed, error: %s\n", strerror(errno));
+    }
+    
+    if (copied == 0) {
+      //EOF Issue
+      ERR_PRINT("Unexpected EOF during copy at %d bytes\n", totalCopied);
+      return -1;
+    }
+
+    ERR_PRINT("file copy copied chunk total now: %ld\n", totalCopied);
+    totalCopied += copied;
+    
+  }
+  
+  return totalCopied;
+
 }
 
 /**
@@ -353,6 +377,8 @@ ReturnCode resizeFileAndMapping(int fd, void** mapping, size_t currentSize, size
   }
 }
 
+#define MAX_COPY_CHUNK_SIZE (250 * 1024 * 1024)
+
 /**
  * Write sequence content to the mmap memory.
  */
@@ -371,16 +397,15 @@ ReturnCode writeSequenceToMapping(Atomic* writeMapping, size_t newSize, size_t n
     return -1;
   }
 
-  int size = 0;
-  int blockOffset = 0;
-  int atomicsCount = 0;
-  int rollingAtomicCount = 0;
+ // Use size_t for all size-related variables to handle large files
+  size_t size = 0;
+  size_t blockOffset = 0;
+  size_t atomicsCount = 0;
+  size_t rollingAtomicCount = 0;
   size_t writeOffset = 0; 
   Atomic *currentItemBlock = NULL;
 
   while (atomicsCount < newSize) {
-    DEBG_PRINT("rollingAtmcCount:%d, blockOffs:%d, size:%d.\n", rollingAtomicCount, blockOffset, size);
-    
     if (rollingAtomicCount >= size) {
       blockOffset = blockOffset + rollingAtomicCount;
       atomicsCount += rollingAtomicCount; 
@@ -396,9 +421,21 @@ ReturnCode writeSequenceToMapping(Atomic* writeMapping, size_t newSize, size_t n
     }
 
     // Safety check parameters for copy operation
-    int atomicsRemaining = newSize - atomicsCount;
-    int atomicsInThisBlock = size - rollingAtomicCount;
-    int atomicsToCopy = (atomicsRemaining < atomicsInThisBlock) ? atomicsRemaining : atomicsInThisBlock;
+    // Safety check parameters for copy operation - use size_t throughout
+    size_t atomicsRemaining = newSize - atomicsCount;
+    size_t atomicsInThisBlock = size - rollingAtomicCount;
+    size_t atomicsToCopy = (atomicsRemaining < atomicsInThisBlock) ? atomicsRemaining : atomicsInThisBlock;
+    
+    
+    if (atomicsToCopy > MAX_COPY_CHUNK_SIZE) {
+      atomicsToCopy = MAX_COPY_CHUNK_SIZE;
+    }
+
+    // Bounds check 
+    if (writeOffset + atomicsToCopy > newAlignedSize) {
+      ERR_PRINT("Write would exceed buffer bounds\n");
+      return -1;
+    }
     
     // Bounds check 
     if (writeOffset + atomicsToCopy > newAlignedSize) {
@@ -407,7 +444,7 @@ ReturnCode writeSequenceToMapping(Atomic* writeMapping, size_t newSize, size_t n
     }
 
     // Copy data to write buffer
-    DEBG_PRINT("Writing %d atomics to offset %d\n", atomicsToCopy, writeOffset);
+    DEBG_PRINT("Writing %d atomics to offset %zu\n", atomicsToCopy, writeOffset);
     memcpy(writeMapping + writeOffset, currentItemBlock + rollingAtomicCount, atomicsToCopy * sizeof(Atomic));
     
     // Update counters
@@ -416,9 +453,15 @@ ReturnCode writeSequenceToMapping(Atomic* writeMapping, size_t newSize, size_t n
     
     // Exit early if still some inconsistency...
     if (atomicsCount + rollingAtomicCount >= newSize) {
+      ERR_PRINT("Completed writing all %zu atomics\n", newSize);
       break;
     }
   }
+
+  // After your write loop completes:
+if (writeOffset < newAlignedSize) {
+    writeMapping[writeOffset] = END_OF_TEXT_CHAR;
+}
 
   return 1;
 }

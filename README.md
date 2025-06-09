@@ -30,7 +30,7 @@ make build
 ```
 To start *Text-Terminal* use a relative path to existing or new file to create. As  file standard if  0: Linux, 1: Windows 2: Mac:
 ```bash
-./textterminal.out [mandatory relative path to existing or new file] [optional 0,1, or 2]
+./textterminal.out [mandatory path to existing or new file] [file standard 0,1, or 2 (for new file or file with no line breaks)]
 ```
 
 ### In the Application

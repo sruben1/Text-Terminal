@@ -122,7 +122,9 @@ LineBstd findMostLikelyLineBreakStd(Sequence *sequence){
     int msdosStdOccur = 0;
     int macStdOccur = 0;
     //DEBG_PRINT("Line b std analysis:\n");
-    for (int i = 0; i < sequence->fileBuffer.size; i++){
+    // Optimize, don't need very large files...
+    int max = (sequence->fileBuffer.size > 1500) ? 1500 : sequence->fileBuffer.size;
+    for (int i = 0; i < max; i++){
         //DEBG_PRINT("%02x", (uint8_t) sequence->fileBuffer.data[i]);
         switch (sequence->fileBuffer.data[i]){
         case LINUX_MSDOS_ID:

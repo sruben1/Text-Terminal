@@ -3,6 +3,7 @@
 
 #IDE
 .vscode/*
+testingText/*
 
 #TeXworks live (LaTeX)
 *.toc

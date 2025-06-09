@@ -197,7 +197,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                     }
                 }
                 
-                #ifdef DEBUG
+                /* #ifdef DEBUG
                 // Basic test print to test backend:
                 DEBG_PRINT("section start = %d, Offset = %d \n", currentSectionStart, offsetCounter);
                 char* textContent = (char*)currentItemBlock;
@@ -214,7 +214,7 @@ ReturnCode print_items_after(Position firstAtomic, int nbrOfLines){
                     DEBG_PRINT("| %02x |", (uint8_t) textContent[i]);
                 }
                 DEBG_PRINT("\n~~~~~~~~~~~~~~~~~~\n");
-                #endif  
+                #endif   */
                 
                 if(currentItemBlock[currentSectionStart] != END_OF_TEXT_CHAR){
                     //print out line or block (could be either!!), interpreted as UTF-8 sequence:atomicsInLine:
@@ -387,7 +387,7 @@ int main(int argc, char *argv[]){
         }
     } else{
         ERR_PRINT("Error argc insufficient.\n");
-        fprintf(stderr, "Argument issue, usage: ./textterminal.out [mandatory relative path to existing or new file] [only for new file creation: file standard 0,1, or 2]\n");
+        fprintf(stderr, "Argument issue, usage: ./textterminal.out [mandatory relative path to existing or new file] [for new file or file with no line breaks: file standard 0,1, or 2]\n");
         exit(-1);
     }
 
@@ -399,8 +399,6 @@ int main(int argc, char *argv[]){
 
     // Initialize ncurses first
     init_editor();
-
-    //insert(activeSequence, 0, L"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad");
     
     // Get initial screen size
     getmaxyx(stdscr, lastGuiHeight, lastGuiWidth);
@@ -1243,6 +1241,7 @@ if (status == OK && wch == CTRL_KEY('y')) {
         DEBG_PRINT("Processing SAVE.\n");
         if (saveSequence(activeSequence) > 0){
             DEBG_PRINT("Save might have succeeded.\n");
+            
         } else{
             // handling?
         }

@@ -279,7 +279,7 @@ ReturnCode generateStructureForFileContent(Sequence *sequence) {
         sequence->lineCount += stats.totalLineBreaks + 1;
 
         DEBG_PRINT("Generating inital file buffer structure done.\n");
-        debugPrintInternalState(sequence, true, true);
+        //debugPrintInternalState(sequence, true, true);
 
         return 1;
     }
@@ -565,7 +565,7 @@ int getCurrentLineCount(Sequence *sequence) {
 /**
  * Query the total amount of atomics used in current sequence state, from both the add and the file buffer.
  */
-int getCurrentTotalSize(Sequence *sequence) {
+size_t getCurrentTotalSize(Sequence *sequence) {
     NodeResult result = {NULL, -1};
 
     if (sequence == NULL) {
@@ -573,7 +573,7 @@ int getCurrentTotalSize(Sequence *sequence) {
     }
 
     DescriptorNode *curr = sequence->pieceTable.first->next_ptr; // Skip sentinel node
-    int i = 0;
+    size_t i = 0;
     while (curr != sequence->pieceTable.last) {
         i += curr->size;
         curr = curr->next_ptr;
