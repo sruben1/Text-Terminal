@@ -1098,7 +1098,7 @@ wchar_t* extractTextRange(Sequence* sequence, int startPos, int endPos) {
 
 
 void close_editor(void) {
-    closeDebuggerFiles;
+    closeDebuggerFiles();
     endwin();
     
     closeSequence(activeSequence, true); // Force close

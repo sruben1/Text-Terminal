@@ -9,6 +9,7 @@
 #include "debugUtil.h"
 #include "fileManager.h" // Handles all file operations
 #include "statistics.h"  // For counting words and lines
+#include "profiler.h" // Mesurement & metrics
 
 /*------ Data structures for internal use ------*/
 typedef struct {
@@ -110,8 +111,9 @@ Sequence *empty() {
 
 Sequence *loadOrCreateNewFile(char *filePath, LineBstd stdIfNewCreation) {
     Sequence *newSeq = empty();
+    profilerStart();
     _currLineB = initSequenceFromOpenOrCreate(filePath, newSeq, stdIfNewCreation);
-
+    profilerStop("Initial file setup");
     if (_currLineB == NO_INIT) {
         ERR_PRINT("Fatal error at file open or create, stoping now.\n");
         fprintf(stderr, "Fatal error at file open or create, stoping now. \nMight need to pass file standard to resolve.\n");
@@ -134,9 +136,9 @@ Sequence *loadOrCreateNewFile(char *filePath, LineBstd stdIfNewCreation) {
         exit(-1);
         break;
     }
-
+    
     generateStructureForFileContent(newSeq);
-
+    
     return newSeq;
 }
 
@@ -200,6 +202,7 @@ ReturnCode generateStructureForFileContent(Sequence *sequence) {
 
     // Adaptation of a similar code section at insert() -> case: at existing piece table split.
     DescriptorNode *newInsert = (DescriptorNode *)malloc(sizeof(DescriptorNode));
+    profilerStart();
     if (newInsert == NULL) {
         ERR_PRINT("Fatal malloc fail at insert operation!\n");
         return -1;
@@ -238,46 +241,19 @@ ReturnCode generateStructureForFileContent(Sequence *sequence) {
             return -1; // Error: Invalid state
         }
 
-        /*
-        NOT NEEDED...
-        TODO : maybe might still need some init stuff:
-
-        // Save state for undo
-        Operation *operation = (Operation*) malloc(sizeof(Operation));
-        if (operation == NULL) {
-          ERR_PRINT("Fatal malloc fail at insert operation!\n");
-          free(newInsert);
-          return -1; // Error
-        }
-        operation->first = prev;
-        operation->oldNext = next;
-        operation->last = next;
-        operation->oldPrev = prev;
-        operation->wordCount = prevWordCount;
-        operation->lineCount = prevLineCount;
-        operation->optimizedCase = 0; // Not an optimized case
-        operation->optimizedCaseSize = 0; // Not used in this case
-        if (pushOperation(sequence->undoStack, operation) == 0) {
-          ERR_PRINT("Failed to push operation onto undo stack.\n");
-          free(newInsert);
-          free(operation);
-          return -1; // Error
-        }
-
-        // Reset the redo stack
-        freeOperationStack(sequence->redoStack);
-        sequence->redoStack = createOperationStack();
-        */
         // Update the piece table
         prev->next_ptr = newInsert;
         newInsert->next_ptr = next;
         newInsert->prev_ptr = prev;
         next->prev_ptr = newInsert;
+        profilerStop("Insert file into piece table");
 
+        profilerStart();
         // Update statistics
         TextStatistics stats = calculateStatsEffect(sequence, newInsert, 0, newInsert, newInsert->size - 1, getCurrentLineBidentifier());
         sequence->wordCount += stats.totalWords;
         sequence->lineCount += stats.totalLineBreaks + 1;
+        profilerStop("Text statistics of file");
 
         DEBG_PRINT("Generating inital file buffer structure done.\n");
         //debugPrintInternalState(sequence, true, true);

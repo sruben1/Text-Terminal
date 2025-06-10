@@ -27,7 +27,7 @@ static inline double profilerStop(char* nameOfOperation) {
     if (_private_start_time != -1){
         clock_t end_time = clock();
         elapsed_time = (end_time - _private_start_time) / (double)CLOCKS_PER_SEC;
-        PROFILER_PRINT("%s took,%f,seconds,%f,\n", nameOfOperation, elapsed_time, clock()/(double)CLOCKS_PER_SEC);
+        PROFILER_PRINT("%_took_(s)_at_(s),%f,%f,\n", nameOfOperation, elapsed_time, _private_start_time/(double)CLOCKS_PER_SEC);
     }
     _private_start_time = -1;
     return elapsed_time;
