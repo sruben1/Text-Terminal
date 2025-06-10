@@ -708,7 +708,11 @@ void handle_menu_input(wint_t wch, int status) {
             case KEY_ENTER:
             case 10:
             case 13: // Enter key: transition menu state or execute action
-                int cursorForFind = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
+                int cursorForFind = getAbsoluteAtomicIndex(cursorY, cursorX+1, activeSequence);
+                DEBG_PRINT("lastAtomic test: %d", getAbsoluteAtomicIndex(cursorY, cursorX+1, activeSequence));
+                if(getAbsoluteAtomicIndex(cursorY, cursorX+1, activeSequence) == -1){
+                        cursorForFind = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
+                }
                 if (currMenuState == FIND || currMenuState == FIND_CYCLE) {
                     DEBG_PRINT("Searching for: %ls\n", firstMenuInput);
                     // In the search case (FIND or FIND_CYCLE):
@@ -724,7 +728,8 @@ void handle_menu_input(wint_t wch, int status) {
                             refreshFlag = true;
                         }
                     }
-                    currMenuState = NOT_IN_MENU;
+                    currMenuState = FIND_CYCLE;
+                    DEBG_PRINT("Set currMenuState to FIND_CYCLE\n");
                     refreshFlag = true; // Request full redraw after action
                 } else if (currMenuState == F_AND_R1) {
                     // Move from "Find" to "Replace" field
@@ -745,7 +750,8 @@ void handle_menu_input(wint_t wch, int status) {
                             refreshFlag = true;
                         }
                     }
-                    currMenuState = NOT_IN_MENU;
+                    currMenuState = F_AND_R_CYCLE;
+                    DEBG_PRINT("Set currMenuState to F_AND_R_CYCLE\n");
                     refreshFlag = true; // Request full redraw after action
                 }
                 break;
@@ -1153,6 +1159,7 @@ void process_input(void) {
     int status;
 
     status = get_wch(&wch);
+    DEBG_PRINT("process_input start: currMenuState=%d\n", currMenuState);
     if (currMenuState != NOT_IN_MENU) {
         handle_menu_input(wch, status);
         return;  // Don't process other input while in menu mode
@@ -1629,11 +1636,11 @@ void relocateAndupdateCursorAndMenu(int newX, int newY){
 void relocateCursorNoUpdate(int newX, int newY){
     if (currMenuState != NOT_IN_MENU){
 
-        if(currMenuState == FIND || currMenuState == F_AND_R1){
+        if(currMenuState == FIND || currMenuState == F_AND_R1 || currMenuState == FIND_CYCLE){
             if(newX < wcslen(firstMenuInput) && newX >= 0){
                 menuCursor = newX;
             }
-        } else if(currMenuState == F_AND_R2){
+        } else if(currMenuState == F_AND_R2 || currMenuState == F_AND_R_CYCLE){
             if(newX < wcslen(secondMenuInput) && newX >= 0){
                 menuCursor = newX;
             }
