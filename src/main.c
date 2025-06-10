@@ -531,6 +531,15 @@ void handle_button_press(int button_index) {
             break;
     }
 }
+const char* getLineBreakString(LineBstd lineBreak) {
+    switch(lineBreak) {
+        case NO_INIT: return "NO_INIT";
+        case MSDOS:   return "MSDOS";
+        case LINUX:   return "LINUX";
+        case MAC:     return "MAC";
+        default:      return "UNKNOWN";
+    }
+}
 
 void draw_text_input_field(int y, int x, int width, const wchar_t* prompt, const wchar_t* input, int cursor_pos, bool active) {
     // Clear the area
@@ -1906,8 +1915,7 @@ void updateCursorAndMenu(){
             // Draw buttons first
             draw_buttons();
             
-            mvprintw(lastGuiHeight - 2, 0, "Ln %d, Col %d || %d words, %d lines || Ctrl-l to quit", getGeneralLineNbr(cursorY + horizOffs + 1), cursorX + horizOffs + 1, getCurrentWordCount(activeSequence), getCurrentLineCount(activeSequence));
-        }
+            mvprintw(lastGuiHeight - 2, 0, "Ln %d, Col %d ||ln break type %s|| %d words, %d lines || Ctrl-l to quit", getGeneralLineNbr(cursorY + horizOffs + 1), cursorX + horizOffs + 1,getLineBreakString(currentLineBreakStd),getCurrentWordCount(activeSequence), getCurrentLineCount(activeSequence));        }
     } else {
         autoAdjustHorizontalScrolling(true);
             
