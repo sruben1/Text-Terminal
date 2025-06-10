@@ -1915,7 +1915,10 @@ void updateCursorAndMenu(){
             // Draw buttons first
             draw_buttons();
             
-            mvprintw(lastGuiHeight - 2, 0, "Ln %d, Col %d ||ln break type %s|| %d words, %d lines || Ctrl-l to quit", getGeneralLineNbr(cursorY + horizOffs + 1), cursorX + horizOffs + 1,getLineBreakString(currentLineBreakStd),getCurrentWordCount(activeSequence), getCurrentLineCount(activeSequence));        }
+            mvprintw(lastGuiHeight - 2, 0, "Ln %d, Col %d || Line breaks: %s || %d words, %d lines || Ctrl-l to quit           ", 
+                getGeneralLineNbr(cursorY + horizOffs + 1), cursorX + horizOffs + 1, getLineBreakString(currentLineBreakStd), 
+                getCurrentWordCount(activeSequence), getCurrentLineCount(activeSequence));
+        }
     } else {
         autoAdjustHorizontalScrolling(true);
             
@@ -1943,7 +1946,10 @@ void updateCursorAndMenu(){
             if (currMenuState == NOT_IN_MENU) {
                 int horizOffs = getCurrHorizontalScrollOffset();
                 int status_x = buttons[2].x + buttons[2].width + 10;
-                mvprintw(lastGuiHeight - 2, 0, "Ln %d-%d, Col %d-%d || %d words, %d lines || Ctrl-l to quit", getGeneralLineNbr(cursorY + horizOffs + 1), getGeneralLineNbr(cursorEndY + horizOffs +1), cursorX + horizOffs + 1, cursorEndX + horizOffs +1, getCurrentWordCount(activeSequence), getCurrentLineCount(activeSequence));
+                mvprintw(lastGuiHeight - 2, 0, "Ln %d-%d, Col %d-%d || Line breaks: %s || %d words, %d lines || Ctrl-l to quit        ", 
+                    getGeneralLineNbr(cursorY + horizOffs + 1), getGeneralLineNbr(cursorEndY + horizOffs +1), 
+                    cursorX + horizOffs + 1, cursorEndX + horizOffs + 1, getLineBreakString(currentLineBreakStd),
+                    getCurrentWordCount(activeSequence), getCurrentLineCount(activeSequence));
             }
 
         }
