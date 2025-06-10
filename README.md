@@ -17,8 +17,8 @@ Its key features are:
 
 * A 64-bit Linux system (or even WSL).
 * A Linux shell compatible with the ncurses API.
-* [xClip](https://github.com/astrand/xclip) must be installed for cut, copy and paste.
-* ncursesw version 6 and dependencies.
+* [xClip](https://github.com/astrand/xclip) must be installed for copy and paste.
+* ncursesw version 6 and dependencies in order to build your executable.
 
 ## Usage
 
@@ -47,6 +47,8 @@ To scroll up or down simply use the <kbd>PageUp</kbd> or <kbd>PageDown</kbd> key
 Use <kbd>Ctrl</kbd> + <kbd>Z</kbd> to undo the last text modification, use <kbd>Ctrl</kbd> + <kbd>R</kbd> to redo it.
 
 To use find, *click* with your mouse on the menu button at the bottom of the screen. Then enter the keyword and confirm with <kbd>Enter</kbd>. The screen will automatically move to the next occurrence of this keyword.
+
+For Text-Terminal's own paste implementation use <kbd>Ctrl</kbd> + <kbd>P</kbd>, for it's copy feature use <kbd>Ctrl</kbd> + <kbd>Y</kbd>.
 
 To use find and replace, *click* on the button in the menu. First type your keyword, hit <kbd>Enter</kbd>, then type the word that should replace it and hit <kbd>Enter</kbd> again. If any occurrence is found, the first occurrence will be replaced immediately - use <kbd>Ctrl</kbd> + <kbd>Z</kbd> to revert. Simply use <kbd>Shift</kbd> + <kbd>Enter</kbd> to cycle again and replace the next occurrence.
 
