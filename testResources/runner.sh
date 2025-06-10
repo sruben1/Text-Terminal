@@ -31,7 +31,7 @@ echo "Ended Generating test files."
 
 #  >>>>>>>>>> Inserts Profiler <<<<<<<<<<
 # Run 0 on 
-for testIdx in {1..5}; do
+for testIdx in {0..5}; do
 echo "Running test ${testIdx}." 
 
 files=("smallFile" "mediumFile" "veryBigFile")
