@@ -33,7 +33,7 @@ int textMatchesBuffer(Sequence *sequence, DescriptorNode *node, int offset, Atom
 int getLineNumber(Sequence *sequence, Position position);
 ReturnCode insertUndoOption(Sequence *sequence, Position position, wchar_t *textToInsert, Operation *previousOperation);
 ReturnCode deleteUndoOption(Sequence *sequence, Position beginPosition, Position endPosition, Operation *previousOperation);
-SearchResult findAndReplaceUndoOption(Sequence *sequence, wchar_t *textToFind, wchar_t *textToReplace, Position startPosition, Operation *previousOperation);
+ReturnCode replaceUndoOption(Sequence *sequence, wchar_t *textToReplace, Position startPosition, Position endPosition, Operation *previousOperation);
 
 /*
 =========================
@@ -1064,47 +1064,86 @@ SearchResult find(Sequence *sequence, wchar_t *textToFind, Position startPositio
 }
 
 SearchResult findAndReplace(Sequence *sequence, wchar_t *textToFind, wchar_t *textToReplace, Position startPosition) {
-    return findAndReplaceUndoOption(sequence, textToFind, textToReplace, startPosition, NULL);
+    SearchResult result = find(sequence, textToFind, startPosition);
+    
+    if (result.foundPosition != -1) {
+        if (replaceUndoOption(sequence, textToReplace, result.foundPosition, result.foundPosition + getUtf8ByteSize(textToFind) - 1, NULL) == 1) {
+            DEBG_PRINT("Found and replaced '%ls' with '%ls' at position %d.\n", textToFind, textToReplace, result.foundPosition);
+            return result; // Return the search result with the found position and line number
+        } else {
+            ERR_PRINT("Replace failed after find.\n");
+            result.foundPosition = -1; // Reset found position to indicate failure
+            result.lineNumber = -1; // Reset line number to indicate failure
+            return result; // Error
+        }
+    }
 }
 
 SearchResult findAndReplaceAll(Sequence *sequence, wchar_t *textToFind, wchar_t *textToReplace, Position startPosition) {
-    SearchResult result = findAndReplace(sequence, textToFind, textToReplace, startPosition);
-    SearchResult lastResult = result;
-    Operation *previousOperation;
+    SearchResult result = {-1, -1}; // Initialize with invalid values
 
-    while (lastResult.foundPosition != -1) {
-        Operation *previousOperation = getOperation(sequence->undoStack);
-        lastResult = findAndReplaceUndoOption(sequence, textToFind, textToReplace, lastResult.foundPosition + getUtf8ByteSize(textToReplace), previousOperation);
+    if (sequence == NULL || textToFind == NULL || textToReplace == NULL || startPosition < 0) {
+        ERR_PRINT("findAndReplaceAll called with invalid sequence, textToFind, textToReplace, or startPosition.\n");
+        return result; // Error
     }
-    DEBG_PRINT("No more matches found for '%ls'.\n", textToFind);
-    return result; 
+
+    Position currentPosition = 0;
+    SearchResult lastResult = find(sequence, textToFind, currentPosition);
+    Operation *previousOperation = NULL;
+    int shiftAmount = getUtf8ByteSize(textToReplace) - getUtf8ByteSize(textToFind); // Used for correcting old positions after replacements
+
+    // Continue replacing until we went through the whole sequence or no more matches are found (i.e. foundPosition is -1)
+    while (lastResult.foundPosition >= currentPosition) {
+
+        // Replace the found text with the new text
+        if (replaceUndoOption(sequence, textToReplace, lastResult.foundPosition, lastResult.foundPosition + getUtf8ByteSize(textToFind) - 1, previousOperation) == 1) {
+            DEBG_PRINT("Replaced '%ls' with '%ls' at position %d.\n", textToFind, textToReplace, lastResult.foundPosition);
+            currentPosition = lastResult.foundPosition + getUtf8ByteSize(textToReplace); // Move past the replaced text
+            previousOperation = getOperation(sequence->undoStack); // Get the last operation for linking to the next one
+
+            if (result.foundPosition == -1 && lastResult.foundPosition >= startPosition) {
+                // Save result if this is the first replacement after the character at the original start position
+                result.foundPosition = lastResult.foundPosition;
+                result.lineNumber = lastResult.lineNumber; 
+            } else {
+                // Change start position because the positions have been shifted by the replacement
+                startPosition += shiftAmount;
+            }
+
+        } else {
+            ERR_PRINT("Replace failed after find.\n");
+            return result; // Error
+        }
+
+        // Find the next occurrence of the text to replace
+        lastResult = find(sequence, textToFind, currentPosition);
+    }
+    
+    return result;
 }
 
 /**
- * Find and replace with the option to link to a previous operation for bundled undo.
+ * Replace the text betweenn startPosition and endPosition with textToReplace.
+ * This function is a concatenation of delete and insert operations but they are bundled together for undo.
+ * By using previousOperation, it can be linked to a previous operation for bundled undo.
  */
-SearchResult findAndReplaceUndoOption(Sequence *sequence, wchar_t *textToFind, wchar_t *textToReplace, Position startPosition, Operation *previousOperation) {
-    SearchResult result = find(sequence, textToFind, startPosition);
+ReturnCode replaceUndoOption(Sequence *sequence, wchar_t *textToReplace, Position startPosition, Position endPosition, Operation *previousOperation) {
+    ReturnCode deleteResult = deleteUndoOption(sequence, startPosition, endPosition, previousOperation);
 
-    if (result.foundPosition != -1) { // Match found
-        DEBG_PRINT("Found match at position %d, replacing with '%ls'.\n", result.foundPosition, textToReplace);
-        ReturnCode deleteResult = deleteUndoOption(sequence, result.foundPosition, result.foundPosition + getUtf8ByteSize(textToFind) - 1, previousOperation);
-        DEBG_PRINT("Undo stack size after delete: %d\n", getOperationStackSize(sequence->undoStack));
-
-        if (deleteResult == 1) {
-            Operation *previousOperation = getOperation(sequence->undoStack);
-            ReturnCode insertResult = insertUndoOption(sequence, result.foundPosition, textToReplace, previousOperation);
-            DEBG_PRINT("Undo stack size after insert: %d\n", getOperationStackSize(sequence->undoStack));
-            if (insertResult == 1) {
-                return result; // Return the search result with the found position and line number
-            } else {
-                ERR_PRINT("Replace: Insert after delete failed.\n");
-                undo(sequence); // Undo the delete operation if insert fails
-            }
+    if (deleteResult == 1) {
+        Operation *deleteOperation = getOperation(sequence->undoStack);
+        ReturnCode insertResult = insertUndoOption(sequence, startPosition, textToReplace, deleteOperation);
+        if (insertResult == 1) {
+            return 1;
         } else {
-            ERR_PRINT("Replace: Delete before insert failed.\n");
+            ERR_PRINT("Replace: Insert after delete failed.\n");
+            undo(sequence); // Undo the delete operation if insert fails
         }
+    } else {
+        ERR_PRINT("Replace: Delete before insert failed.\n");
     }
+
+    return -1; // Error
 }
 
 /*
