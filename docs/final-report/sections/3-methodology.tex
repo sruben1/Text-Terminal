@@ -54,3 +54,17 @@ The \verb|textStructure.h| header is the main interface connecting the GUI in \v
 \label{fig:codeStruct}
 
 \end{figure}
+
+%GUI
+\noindent
+\\\verb|print_items_after| is one of our most important parts and our method to that displays text in our terminal. Prints a certain number of lines starting from a chosen atomic position in our text sequence.
+Checks if sequence exists and line break standards. If good proceeds. It walks through blocks of text data and handles things liek UTF-8 character boundaries, skips control characters and detects line breaks or end-of-block to finish a text line.
+\\Changes current line segment to wide-character string for terminal compatibility.
+Output is the processed string that goes to the terminal at correct screen position.
+\\For efficiency it only prints lines that are actually visible on the terminal, so out of view lines don't get printed. For that we have a variable that has the absolute position of the line at the top of the screen (e.g. top line is actually the 5th line in the entire text).
+Also this is where the lineStats get update and if a line goes across multiple blocks the counters(atomicsInLine, nbrOfUtf8CharsNoControlCharsInLine) carry over to next block
+\\
+\\In \verb|guiUtilities| we have our line statistics like what is the current line number at the top of the screen or how many chars are in the specified line. The methods in here are used for things like scrolling, jumping to a specific line when using the search function or managing the line stats.
+Standouts are the converter from UTF-8 to wide characters and a way to translate cursor position to a position in our data structure.
+\\
+\\Our Cursor refreshs independent of our text. That means when our cursor moves position it doesn't cause the text to also be refreshed, that would be a big performance hit.
