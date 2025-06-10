@@ -253,13 +253,14 @@ ReturnCode generateStructureForFileContent(Sequence *sequence) {
         TextStatistics stats = calculateStatsEffect(sequence, newInsert, 0, newInsert, newInsert->size - 1, getCurrentLineBidentifier());
         sequence->wordCount += stats.totalWords;
         sequence->lineCount += stats.totalLineBreaks + 1;
-        profilerStop("Text statistics of file");
+        
 
         DEBG_PRINT("Generating inital file buffer structure done.\n");
         //debugPrintInternalState(sequence, true, true);
-
-        return 1;
+        
     }
+    profilerStop("Text statistics of file");
+    return 1;
 }
 
 /**
