@@ -50,11 +50,11 @@ To use find, *click* with your mouse on the menu button at the bottom of the scr
 
 For Text-Terminal's own paste implementation use <kbd>Ctrl</kbd> + <kbd>P</kbd>, for it's copy feature use <kbd>Ctrl</kbd> + <kbd>Y</kbd>.
 
-To use find and replace, *click* on the button in the menu. First type your keyword, hit <kbd>Enter</kbd>, then type the word that should replace it and hit <kbd>Enter</kbd> again. If any occurrence is found, the first occurrence will be replaced immediately - use <kbd>Ctrl</kbd> + <kbd>Z</kbd> to revert. Simply use <kbd>Shift</kbd> + <kbd>Enter</kbd> to cycle again and replace the next occurrence.
+To use find and replace, *click* on the button in the menu. First type your keyword, hit <kbd>Enter</kbd> and then type in the word that should replace the keyword. By hitting <kbd>Enter</kbd> a second time, the next occurrence is replaced - by hitting <kbd>Tab</kbd>, all occurrences are replaced. You can use <kbd>Ctrl</kbd> + <kbd>Z</kbd> to revert the whole operation.
 
 ### Save and Exit
 
-To save your new changes to the file use <kbd>Ctrl</kbd> + <kbd>S</kbd>.
+To save your new changes to the file use <kbd>Ctrl</kbd> + <kbd>S</kbd> or the button in the menu bar.
 To exit the editor use <kbd>Ctrl</kbd> + <kbd>L</kbd>.
 
 If for some reason you wish to recover a previous file state but accidentally overwrote it by saving new changes: temporary backups are made of the original file before each save in `/tmp/TxTinternal-filebackup-*` or if it was the first save operation `/tmp/TxTinternal-OrigState-*`.
