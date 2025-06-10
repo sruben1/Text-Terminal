@@ -708,10 +708,15 @@ void handle_menu_input(wint_t wch, int status) {
             case KEY_ENTER:
             case 10:
             case 13: // Enter key: transition menu state or execute action
-                int cursorForFind = getAbsoluteAtomicIndex(cursorY, cursorX+1, activeSequence);
-                DEBG_PRINT("lastAtomic test: %d", getAbsoluteAtomicIndex(cursorY, cursorX+1, activeSequence));
-                if(getAbsoluteAtomicIndex(cursorY, cursorX+1, activeSequence) == -1){
+                int cursorForFind = 0;
+                if(currMenuState == FIND_CYCLE || currMenuState == F_AND_R_CYCLE){
+                    cursorForFind = getAbsoluteAtomicIndex(cursorY, cursorX+1, activeSequence);
+                } else {
+                    int cursorForFind = getAbsoluteAtomicIndex(cursorY, cursorX+1, activeSequence);
+                    DEBG_PRINT("lastAtomic test: %d", getAbsoluteAtomicIndex(cursorY, cursorX+1, activeSequence));
+                    if(getAbsoluteAtomicIndex(cursorY, cursorX+1, activeSequence) == -1){
                         cursorForFind = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
+                    }
                 }
                 if (currMenuState == FIND || currMenuState == FIND_CYCLE) {
                     DEBG_PRINT("Searching for: %ls\n", firstMenuInput);
