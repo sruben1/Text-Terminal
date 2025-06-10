@@ -152,18 +152,18 @@ ReturnCode jumpAbsoluteLineNumber(int newTopLineNumber, int atomicIdxOfTop){
  * Returns the current horizontal scrolling state, returns integer >= 0. 
  */
 int getCurrHorizontalScrollOffset(){
-    return _horizontalScreenOffset;
+    return 0;   //_horizontalScreenOffset;
 }
 
 /**
  * Used to increment the current horizontal scrolling value, returns 1 on success, -1 on fail. 
  */
 ReturnCode changeHorizontalScrollOffset(int increment){
-    if(_horizontalScreenOffset + increment < 0){
+    /*if(_horizontalScreenOffset + increment < 0){
         _horizontalScreenOffset = 0;
     } else{
         _horizontalScreenOffset += increment;
-    }
+    }*/
     return 1;
 }
 
@@ -171,11 +171,11 @@ ReturnCode changeHorizontalScrollOffset(int increment){
  * Used to set the current horizontal scrolling value if new value < 0 simply set to 0. 
  */
 ReturnCode setHorizontalScrollOffset(int newValue){
-    if(newValue < 0){
+    /*if(newValue < 0){
         _horizontalScreenOffset = 0;
     } else{
         _horizontalScreenOffset = newValue;
-    }
+    }*/
     return 1;
 }
 
