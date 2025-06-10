@@ -94,6 +94,8 @@ bool autoAdjustHorizontalScrolling(bool forEndCursor);
 // Helper functions:
 ReturnCode deleteCurrentSelectionRange();
 
+// Testing functions:
+void testingRefreshAdaptation();
 
 /*======== operations ========*/
 ReturnCode open_and_setup_file(char* filePath, LineBstd stdIfNewCreation){
@@ -432,7 +434,10 @@ int main(int argc, char *argv[]){
             profilerStart();
             insert(activeSequence, amt, randomString);
             profilerStop("Opti_Insert");
+
+            profilerStart();
             testingRefreshAdaptation();
+            profilerStop("GUI_refresh");
         }
     } else if (selector == 1){
         for (int amt = 4; amt < 1005; amt++){
@@ -443,7 +448,10 @@ int main(int argc, char *argv[]){
             profilerStart();
             insert(activeSequence, 4, randomString);
             profilerStop("Non_Opti_Insert");
+
+            profilerStart();
             testingRefreshAdaptation();
+            profilerStop("GUI_refresh");
         }
     } else if (selector == 2){
         // Half/half variation:
