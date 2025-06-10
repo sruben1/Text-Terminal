@@ -34,11 +34,11 @@
 % for tables with cells spanning several rows
 \usepackage{multirow}
 \usepackage{makecell}
-
 %% for grafics and figures
 \usepackage{graphicx}
 \usepackage{svg}  % to use .svg
 \usepackage{tikz}
+\usetikzlibrary{shapes,positioning,arrows,arrows.meta,fit, backgrounds}
 
 %% for flexible list items
 \usepackage{enumitem}
@@ -107,7 +107,13 @@ Shura V. Ruben \\ \\ \\ \\}
     \setcounter{page}{1} % Start from page 1
     
     %% Here you add additional files for additional sections
-    \input{sections/intro}
+    \input{sections/1-intro}
+    \input{sections/2-background}
+    \input{sections/3-methodology}
+    \input{sections/4-results}
+    \input{sections/5-discussion}
+    \input{sections/6-conclusion}
+    \input{sections/7-learned}
 
     %% References, add them to references.bib
     \bibliographystyle{ieeetr}

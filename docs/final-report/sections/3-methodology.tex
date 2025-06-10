@@ -1,0 +1,56 @@
+\section{Methodology}\label{sec:meto}
+% Conceptual explanation of implementation, configuration, and setup. (May use code snippets and
+% screenshots to explain concepts, but not full code listings.)
+After deciding on our project topic we fixed our software requirements in more concrete form. Having done so we identified that it would be most beneficial to divide our future code into front end and backed with the main interface being between graphical user interface (GUI) and text data structure. \\
+The \verb|textStructure.h| header is the main interface connecting the GUI in \verb|main.c| and the actual text data structure implementation in \verb|textStructure.c|.
+\begin{figure}[h!]
+\caption{Project Code Structure}
+\noindent\begin{tikzpicture}[ 
+    % Define node styles
+    scale = 1,
+    node distance = 0.5cm,
+    minimum height = 1cm,
+    imp/.style={rectangle, rounded corners, fill=teal!65, draw, align=center},
+    file/.style={rectangle, rounded corners, fill=teal!25, draw, align=center},
+    adj/.style={rectangle, rounded corners, fill=gray!10, draw, align=center},
+    division1/.style={rectangle, fill=teal!5, draw=teal!20, line width=1pt, inner sep=5mm},
+    division2/.style={rectangle, fill=teal!5, draw=teal!20, line width=1pt, inner sep=5mm},
+    division3/.style={rectangle, fill=gray!5, draw=gray!50, line width=1pt, inner sep=5mm},
+]
+
+% Main nodes
+\node[file] (guiUt) {guiUtilities};
+\node[file, right= 1.5of guiUt] (fileM) {fileManager};
+\node[file, right= of fileM] (undo) {undoRedoUtilities};
+\node[file, right= of undo] (stats) {statistics};
+
+\node[imp, above= of guiUt] (main) {main};
+\node[imp, above= of undo] (txtStruct) {textStructure};
+
+\node[adj, right = 1.5of stats] (profiler){profiler};
+\node[adj, above= of profiler] (debug) {debugUtil};
+
+% Background division boxes using fit library
+\begin{scope}[on background layer]
+    \node[division1, fit=(main)(guiUt)] (division1) {};
+    \node[above= 0.1of division1] {\bfseries Front End};
+    \node[division2, fit=(txtStruct)(fileM)(undo)(stats)] (division2) {};
+    \node[above= 0.1of division2] {\bfseries Back End};
+    
+    \node[division3, fit=(profiler)(debug)] (division3) {};
+    \node[above= 0.1of division3] {\bfseries debugging help};
+\end{scope}
+
+% Arrows for main flow
+\draw[latex-latex,  line width=2pt] (main) -- (txtStruct);
+
+\draw[latex-latex,  line width=0.5pt] (main) -- (guiUt);
+\draw[latex-latex,  line width=0.5pt] (main) -- (fileM);
+\draw[latex-latex,  line width=0.5pt] (txtStruct) -- (fileM);
+\draw[latex-latex,  line width=0.5pt] (txtStruct) -- (undo);
+\draw[latex-latex,  line width=0.5pt] (txtStruct) -- (stats);
+
+\end{tikzpicture}
+\label{fig:codeStruct}
+
+\end{figure}
