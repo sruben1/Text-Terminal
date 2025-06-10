@@ -472,13 +472,64 @@ int main(int argc, char *argv[]){
             profilerStop("GUI_refresh");
         }
     }
-    // >>> INSERTS with different (to be run multiple times on different files with different sizes):
+
+    // >>> UNDO/REDO PROFILER (to be run multiple times on different files with different sizes):
     if (selector == 3){
-        
-    } else if (selector == 4){
+        for (int amt = 4; amt < 100005; amt++){
+            // Generate random letter (A-Z)
+            wchar_t randomLetter = L'A' + (rand() % 26);
+            wchar_t randomString[2] = {randomLetter, L'\0'};
 
+            insert(activeSequence, 4, randomString); // unoptimized insert
+
+            // Delete all written characters every 1000th iteration and measure undo/redo performance
+            if (amt % 1004 == 0) {
+                profilerStart();
+                delete(activeSequence, 4, amt);
+                profilerStop("Delete");
+
+                profilerStart();
+                undo(activeSequence);
+                profilerStop("Undo");
+
+                profilerStart();
+                redo(activeSequence);
+                profilerStop("Redo");
+
+                undo(activeSequence); // Go back to the state before the delete
+            }
+        }
+    }
+    
+    // >>> SEARCH PROFILER (only run on veryBigFile to allow wide spread of "pattern"):
+    if (selector == 4) {
+        // Write a pattern "pattern" at every 1000th position
+        for (int pos = 4; pos < 100005; pos += 1000) {
+            insert(activeSequence, pos, L"pattern");
+        }
+
+        // Simulate a search for "pattern" without using the cache
+        Position startPosition = 0;
+        for (int run = 0; run < 100; run++) {
+            profilerStart();
+            SearchResult result = find(activeSequence, L"pattern", startPosition, 0);
+            profilerStop("Search_Without_Cache");
+            startPosition = result.foundPosition + 1; // Move start position to next character after found pattern
+        }
     } else if (selector == 5){
+        // Write a pattern "pattern" at every 1000th position
+        for (int pos = 4; pos < 100005; pos += 1000) {
+            insert(activeSequence, pos, L"pattern");
+        }
 
+        // Simulate a search for "pattern" with using the cache
+        Position startPosition = 0;
+        for (int run = 0; run < 100; run++) {
+            profilerStart();
+            SearchResult result = find(activeSequence, L"pattern", startPosition, 1);
+            profilerStop("Search_With_Cache");
+            startPosition = result.foundPosition + 1; // Move start position to next character after found pattern
+        }
     }
 
     if (selector == 6){
@@ -775,7 +826,7 @@ void handle_menu_input(wint_t wch, int status) {
                 if (currMenuState == FIND || currMenuState == FIND_CYCLE) {
                     DEBG_PRINT("Searching for: %ls\n", firstMenuInput);
                     // In the search case (FIND or FIND_CYCLE):
-                    SearchResult resultFind = find(activeSequence, firstMenuInput, cursorForFind);
+                    SearchResult resultFind = find(activeSequence, firstMenuInput, cursorForFind, 1);
                     if(resultFind.foundPosition != -1) {
                         int foundLineStart = backtrackToFirstAtomicInLine(activeSequence, resultFind.foundPosition);
                         if (foundLineStart >= 0) {

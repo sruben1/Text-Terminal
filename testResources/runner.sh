@@ -31,9 +31,15 @@ echo "Ended Generating test files."
 
 #  >>>>>>>>>> Inserts Profiler <<<<<<<<<<
 # Run 0 on 
-for testIdx in {0..2}; do
+for testIdx in {1..5}; do
 echo "Running test ${testIdx}." 
-for file in "smallFile" "mediumFile" "veryBigFile"; do
+
+files=("smallFile" "mediumFile" "veryBigFile")
+if [[ $testIdx -eq 4 || $testIdx -eq 5 ]]; then
+    files=("veryBigFile") # Only run veryBigFile for tests 4 and 5 (search)
+fi
+
+for file in "${files[@]}"; do
 
 #Call our program:
 ${PROGRAM} "./testingText/${file}.txt" 0 ${testIdx}

@@ -187,7 +187,7 @@ ReturnCode delete(Sequence *sequence, Position beginPosition, Position endPositi
  * The search starts at startPosition (inclusive) and, if necessary, wraps around to the beginning of the sequence.
  * Returns the SearchResult for the first charcter of the first occurrence, or -1 if no match was found.
  */
-SearchResult find(Sequence *sequence, wchar_t *textToFind, Position startPosition);
+SearchResult find(Sequence *sequence, wchar_t *textToFind, Position startPosition, int useCachedResult);
 
 /**
  * Searches for a given text (nullterminated string of wide chars) in the sequence.

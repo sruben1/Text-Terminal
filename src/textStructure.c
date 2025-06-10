@@ -31,7 +31,7 @@ int amountOfContinuationBytes(Sequence *sequence, DescriptorNode *node, int offs
 size_t getUtf8ByteSize(const wchar_t *wstr);
 ReturnCode writeToAddBuffer(Sequence *sequence, wchar_t *textToInsert, int *sizeOfCharOrNull);
 int textMatchesBuffer(Sequence *sequence, DescriptorNode *node, int offset, Atomic *needle, size_t needleSize);
-int getLineNumber(Sequence *sequence, Position position);
+int getLineNumber(Sequence *sequence, Position position, int useCachedResult);
 ReturnCode insertUndoOption(Sequence *sequence, Position position, wchar_t *textToInsert, Operation *previousOperation);
 ReturnCode deleteUndoOption(Sequence *sequence, Position beginPosition, Position endPosition, Operation *previousOperation);
 SearchResult findAndReplaceUndoOption(Sequence *sequence, wchar_t *textToFind, wchar_t *textToReplace, Position startPosition, Operation *previousOperation);
@@ -439,7 +439,7 @@ int textMatchesBuffer(Sequence *sequence, DescriptorNode *node, int offset, Atom
  * (e.g. a call for position 5 in "Hello\nWorld" will return 2, not 1).
  * If the position is invalid, returns -1.
  */
-int getLineNumber(Sequence *sequence, Position position) {
+int getLineNumber(Sequence *sequence, Position position, int useCachedResult) {
     if (sequence == NULL || position < 0) {
         ERR_PRINT("getLineNumber called with invalid sequence or position.\n");
         return -1;
@@ -452,7 +452,7 @@ int getLineNumber(Sequence *sequence, Position position) {
 
     // If the position comes after the position of the last known line result, we can start from there
     Position lastPosition = sequence->lastLineResult.foundPosition;
-    if (lastPosition != -1 && lastPosition <= position) {
+    if (useCachedResult && lastPosition != -1 && lastPosition <= position) {
         DEBG_PRINT("Using cached last line result for position %d.\n", lastPosition);
         NodeResult nodeResult = getNodeForPosition(sequence, lastPosition);
         if (nodeResult.node == NULL) {
@@ -858,8 +858,10 @@ ReturnCode deleteUndoOption(Sequence *sequence, Position beginPosition, Position
     }
 
     // Find the nodes for the given positions and check if a deletion is possible there
+    profilerStart();
     NodeResult startNodeResult = getNodeForPosition(sequence, beginPosition);
     NodeResult endNodeResult = getNodeForPosition(sequence, endPosition);
+    profilerStop("Node search for delete operation");
     DescriptorNode *startNode = startNodeResult.node;
     DescriptorNode *endNode = endNodeResult.node;
     if (startNode == NULL || startNode == sequence->pieceTable.last || endNode == NULL || endNode == sequence->pieceTable.last) {
@@ -965,7 +967,7 @@ ReturnCode deleteUndoOption(Sequence *sequence, Position beginPosition, Position
     return 1;
 }
 
-SearchResult find(Sequence *sequence, wchar_t *textToFind, Position startPosition) {
+SearchResult find(Sequence *sequence, wchar_t *textToFind, Position startPosition, int useCachedResult) {
     SearchResult result = {-1, -1}; // Initialize with invalid values
     if (sequence == NULL || textToFind == NULL || startPosition < 0) {
         ERR_PRINT("Find called with invalid sequence, textToFind, or startPosition.\n");
@@ -1020,7 +1022,7 @@ SearchResult find(Sequence *sequence, wchar_t *textToFind, Position startPositio
                     result.lineNumber = countedLineBreaks + 1; // We can assume that there exists at least one line, otherwise there will be no match
                 } else {
                     // We only have to get the line number before startPosition (which is faster to do)
-                    result.lineNumber = getLineNumber(sequence, startPosition - 1) + countedLineBreaks;
+                    result.lineNumber = getLineNumber(sequence, startPosition - 1, useCachedResult) + countedLineBreaks;
                 }
                 // Update cached last line result
                 sequence->lastLineResult.foundPosition = result.foundPosition;
@@ -1061,7 +1063,7 @@ SearchResult findAndReplaceAll(Sequence *sequence, wchar_t *textToFind, wchar_t 
  * Find and replace with the option to link to a previous operation for bundled undo.
  */
 SearchResult findAndReplaceUndoOption(Sequence *sequence, wchar_t *textToFind, wchar_t *textToReplace, Position startPosition, Operation *previousOperation) {
-    SearchResult result = find(sequence, textToFind, startPosition);
+    SearchResult result = find(sequence, textToFind, startPosition, 1);
 
     if (result.foundPosition != -1) { // Match found
         DEBG_PRINT("Found match at position %d, replacing with '%ls'.\n", result.foundPosition, textToReplace);
