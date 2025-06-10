@@ -308,7 +308,7 @@ size_t simpleFileCopy(int sourceFd, int destFd, size_t fileSize) {
       return -1;
     }
 
-    ERR_PRINT("file copy copied chunk total now: %ld\n", totalCopied);
+    DEBG_PRINT("file copy copied chunk total now: %ld\n", totalCopied);
     totalCopied += copied;
     
   }
@@ -453,7 +453,7 @@ ReturnCode writeSequenceToMapping(Atomic* writeMapping, size_t newSize, size_t n
     
     // Exit early if still some inconsistency...
     if (atomicsCount + rollingAtomicCount >= newSize) {
-      ERR_PRINT("Completed writing all %zu atomics\n", newSize);
+      DEBG_PRINT("Completed writing all %zu atomics\n", newSize);
       break;
     }
   }

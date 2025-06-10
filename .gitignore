@@ -8,6 +8,7 @@ testingText/*
 #TeXworks live (LaTeX)
 *.toc
 *.out
+*.pdf
 *.log
 *.aux
 *.synctex.gz
