@@ -685,14 +685,30 @@ void handle_menu_input(wint_t wch, int status) {
                 refreshFlag = true; // Request a full redraw to erase menu UI
                 break;
 
+            case 9: // Tab key: replace all
+                if (currMenuState == F_AND_R2) {
+                    int cursorForFind = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
+                    SearchResult resultFindAndReplace = findAndReplaceAll(activeSequence, firstMenuInput, secondMenuInput, cursorForFind);
+                    if( resultFindAndReplace.foundPosition != -1) {
+                        int foundLineStart = backtrackToFirstAtomicInLine(activeSequence, resultFindAndReplace.foundPosition);
+                        if (foundLineStart >= 0) {
+                            jumpAbsoluteLineNumber(resultFindAndReplace.lineNumber - 1, foundLineStart);
+                            cursorY = 0;
+                            cursorEndY = 0;
+                            cursorX = resultFindAndReplace.foundPosition - foundLineStart;
+                            cursorEndX = resultFindAndReplace.foundPosition - foundLineStart;
+                            refreshFlag = true;
+                        }
+                    }
+                    currMenuState = NOT_IN_MENU;
+                    refreshFlag = true;
+                }
+                break;
+
             case KEY_ENTER:
             case 10:
             case 13: // Enter key: transition menu state or execute action
-                int cursorForFind = getAbsoluteAtomicIndex(cursorY, cursorX+1, activeSequence);
-                DEBG_PRINT("lastAtomic test: %d", getAbsoluteAtomicIndex(cursorY, cursorX+1, activeSequence));
-                if(getAbsoluteAtomicIndex(cursorY, cursorX+1, activeSequence) == -1){
-                        cursorForFind = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
-                    }
+                int cursorForFind = getAbsoluteAtomicIndex(cursorY, cursorX, activeSequence);
                 if (currMenuState == FIND || currMenuState == FIND_CYCLE) {
                     DEBG_PRINT("Searching for: %ls\n", firstMenuInput);
                     // In the search case (FIND or FIND_CYCLE):
