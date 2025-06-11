@@ -1,40 +1,44 @@
 \section{Results}\label{sec:results}
 % Show the result/capabilities of your solution through plots, tables, screenshots, videos, etc.
 
-Over all we are very happy with the performance of our text structure. We ran different performance metrics with a 15 KB, a 20 MB, and a 1.9 GB test file. As is visible below, we managed to implement all real time features so that all important metrics stay under 1 or 2 milliseconds, which we deem very good performance, especially since it stays in this range even with text files that are gigabytes large.
-\\In figure \ref{fig:renderMetric} we show different insert patterns for the most significant cases in the 20 MB file. In this context, optimized signifies that contiguous inserts in the text sequence get merged into the same piece table piece allowing to reduce the size of the linked list in this common usage pattern (most often, text is written one char after another in our experience). We only included the metric of the 20 MB file since we didn't see a different behavior when comparing them acorss the 3 file sizes.
+Overall we are very happy with the performance of our text structure. We ran different performance metrics with a 15 KB, a 20 MB, and a 1.9 GB test file. As is visible below, we managed to implement all real time features so that all important metrics stay under 1 or 2 milliseconds, which we deem very good performance, especially since it stays in this range even with text files that are gigabytes large.
+\\In figure \ref{fig:renderMetric} we show different insertion patterns for the most significant cases in the 20 MB file. In this context, optimized insert signifies that contiguous inserts in the text sequence get merged into the same piece descriptor, allowing to reduce the size of the linked list in this common usage pattern (most often, text is written one char after another in our experience). We only included the metric of the 20 MB file since we didn't see a different behavior when comparing them across the three file sizes.
 \begin{figure}[H]
     \centering
-    \caption{gui display delay in (20 MB file)}
     \includegraphics[width=0.6\textwidth]{./images/Profiler-Render-Metric-Size1.jpg}
+    \caption{gui display delay in (20 MB file)}
     \label{fig:renderMetric}
 \end{figure}
-In figure \ref{fig:insertVsSize01} and \ref{fig:insertVsSize02} the average of these 3 insert patterns (at each insert position) is used to display a slowdown analysis between the three file sizes mentioned above. What is to note here, that the performance seems to be more limited by other system factors and our text structure handles inserts about as well no matter how big the file is (see average variations from one run to the other).
+In figure \ref{fig:insertVsSize01} and \ref{fig:insertVsSize02} the average of these three insertion patterns (at each insert position) is used to display a slowdown analysis between the three file sizes mentioned above. What is to note here, is that the performance seems to be more limited by other system factors while our text structure maintains similar insertion performance across all file sizes (see average variations from one run to the other).
 \begin{figure}[H]
 \centering
-\caption{ }
 \begin{subfigure}[b]{0.48\textwidth}
     \centering
-    \caption{a first metrics run}
     \includegraphics[width=\textwidth]{./images/Profiler-insert-slowdown-01.png}
+    \caption{a first metrics run}
     \label{fig:insertVsSize01}
 \end{subfigure}
 \hfill
 \begin{subfigure}[b]{0.48\textwidth}
     \centering
-    \caption{a seccond metrics run}
     \includegraphics[width=\textwidth]{./images/Profiler-insert-slowdown-02.png}
+    \caption{a seccond metrics run}
     \label{fig:insertVsSize02}
 \end{subfigure}
+\caption{ }
 \end{figure}
 
+Figure 5 depicts the time taken to determine the relevant nodes for the deletion of text that spans a growing number of nodes (piece descriptors). Even for a large amount of nodes this still performs in the range of milliseconds. At the same time, we can see that undo and redo are not affected by the amount of nodes that the deletion effects, because they work locally around the first and last node of the deleted span (these nodes are directly accessible on the undo stack).
+
+\noindent
+\\In figure 6 we can see the effect of caching the last line result when iteratively searching a text for the next occurrence of a periodically appearing pattern. Without caching, in each iteration the line number has to be determined starting from the beginning, which takes longer the bigger the position of the search result is. By using the last result in the cache, this behavior is prevented.
 
 \begin{minipage}[t]{0.48\textwidth}
 \centering
 \begin{figure}[H]
 \centering
-\caption{ }
 \includegraphics[width=\textwidth]{./images/Profiler-Undo-Redo.jpg}
+\caption{ }
 \label{fig:undoMetric}
 \end{figure}
 \end{minipage}
@@ -43,8 +47,8 @@ In figure \ref{fig:insertVsSize01} and \ref{fig:insertVsSize02} the average of t
 \centering
 \begin{figure}[H]
 \centering
-\caption{ }
 \includegraphics[width=\textwidth]{./images/Profiler-Find-Caching.jpg}
+\caption{ }
 \label{fig:findMetric}
 \end{figure}
 \end{minipage}
