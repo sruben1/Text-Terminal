@@ -2,6 +2,11 @@
 % Introduces relevant background knowledge to understand your work (e.g., existing algorithms,
 % protocols, software, and technologies).
 
+For the text structure we did some research and settled on implementing our own \textit{piece table} data structure inspired by C. Crowley's research paper \cite{crowley1998data}. \textit{Piece tables} are a good choice in our use case since they require almost no preprocessing (good for large files), allow for very efficient inserts and deletes even in large files and fit well with memory mapped files (which we implemented). More about \textit{piece tables} and our implementation in the next section \ref{sec:meto}. 
 %GUI
-ncursesw version 6 \cite{ncursesw} is the library that we chose to build our text-based UI because it has good terminal support. Specifically we chose the wide characters version of ncruses so that it can support Unicode and international character sets (standard ncurses only has ASCII support).
-\\\\We also used xclip \cite{xclip} for our copy/paste functionality. It allows accessing the clipborad in X11, which is the Linux desktop environment. It bridges the terminal and GUI clipboard.
+\par
+\smallskip
+The GUI uses ncursesw version 6 \cite{ncursesw}, it is the library that we chose to build our text-based UI because it has good terminal support. Specifically we chose the wide characters version of ncruses so that it can support Unicode and international character sets (standard ncurses only has ASCII support).
+\par
+\smallskip
+We also used xclip \cite{xclip} for our copy/paste functionality. It allows accessing the clipborad in X11, which is the Linux desktop environment. It bridges the terminal and GUI clipboard.
