@@ -1,9 +1,8 @@
-
 #!/bin/bash
 
 make profiler
 
-PROGRAM=./TestBuild.out
+PROGRAM="./TestBuild.out"
 
 # Automatically increment counter each time script is called
 run_number=1
@@ -56,24 +55,3 @@ fi
 sleep 1
 done
 done
-
-# #  >>>>>>>>>> TEMPLATE <<<<<<<<<<
-# for testIdx in {FROM..TO}; do
-# echo "Running test ${testIdx}." 
-# for file in "smallFile" "mediumFile" "veryBigFile"; do
-
-# #Call our program:\mediumFile.txt
-# ${PROGRAM} ""./testingText/${file}.txt" 0 ${testIdx}
-
-# # Check data exists first:
-# if [ -f "./profiler.log" ]; then
-#     cp ./profiler.log "./profilerRuns/run${run_number}/${testIdx}-Run-${file}.csv"
-    
-#     echo "Profiler run completed. Log saved to ./profilerRuns/run${run_number}/${testIdx}-Run-${file}.csv"
-# else
-#     echo "Warning: profiler.log was not created, on test: ${testIdx} ${file}"
-# fi
-# #Small delay between program executions
-# sleep 1
-# done
-# done
