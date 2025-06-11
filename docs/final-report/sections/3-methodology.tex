@@ -1,9 +1,8 @@
 \section{Methodology}\label{sec:meto}
 % Conceptual explanation of implementation, configuration, and setup. (May use code snippets and
 % screenshots to explain concepts, but not full code listings.)
-After deciding on our project topic we fixed our software requirements in more concrete form. Having done so we identified that it would be most beneficial to divide our future code into front end and backed with the main interface being between graphical user interface (GUI) and text data structure. The \verb|textStructure.h| header is the main interface connecting the GUI in \verb|main.c| and the actual text data structure implementation in \verb|textStructure.c| \cite{GithubRepo}. The other files are mostly built around these two central pieces of code. A more visual layout can be seen in figure \ref{fig:codeStruct}.
+After deciding on our project topic we fixed our software requirements in more concrete form. We identified that it would be most beneficial to divide our future code into frontend and backend with the main interface being between graphical user interface (GUI) and text data structure. The \verb|textStructure.h| header is the main interface connecting the GUI in \verb|main.c| and the actual text data structure implementation in \verb|textStructure.c| \cite{GithubRepo}. The other files are mostly built around these two central pieces of code. A more visual layout can be seen in figure \ref{fig:codeStruct}.
 \begin{figure}[H]
-\caption{Project Code Structure}
 \noindent\begin{tikzpicture}[ 
     % Define node styles
     scale = 1,
@@ -32,9 +31,9 @@ After deciding on our project topic we fixed our software requirements in more c
 % Background division boxes using fit library
 \begin{scope}[on background layer]
     \node[division1, fit=(main)(guiUt)] (division1) {};
-    \node[above= 0.1of division1] {\bfseries Front End};
+    \node[above= 0.1of division1] {\bfseries Frontend};
     \node[division2, fit=(txtStruct)(fileM)(undo)(stats)] (division2) {};
-    \node[above= 0.1of division2] {\bfseries Back End};
+    \node[above= 0.1of division2] {\bfseries Backend};
     
     \node[division3, fit=(profiler)(debug)] (division3) {};
     \node[above= 0.1of division3] {\bfseries debugging \& analysis};
@@ -50,16 +49,23 @@ After deciding on our project topic we fixed our software requirements in more c
 \draw[latex-latex,  line width=0.5pt] (txtStruct) -- (stats);
 
 \end{tikzpicture}
+\caption{Project Code Structure}
 \label{fig:codeStruct}
 \end{figure}
 
-The text structure was implemented in a sequence structure with piece table (see figure \ref{fig:sequence}). The inserts and deletes are handling different cases allowing to change the displayed text content in all desired forms (split pieces, delete pieces and/or parts of them, ...). Any new inserted text gets written to an dynamically growing changes buffer, if a portion of text is then truncated or extended (deletes/inserts) we can remain very efficient since we simply update pointers in our pieces table to remove some part or add a new piece pointing to newly written content always at the current end of the add buffer. \\
-As we show in the next section \ref{sec:results}, in our context the choice of a linked list is still very well performative even when having a lot of nodes.
+The piece table stores the piece descriptors in form of a doubly linked list (see figure \ref{fig:sequence}). Each piece is identified by the buffer it is stored in, the offset into that buffer and its size. Editing the text sequence at a specific position, therefore requires the piece descriptor associated with that position by using the \verb|getNodeForPosition| function. Afterwards, all changes can be done locally around the respective piece descriptor. By using empty sentinel nodes at the beginning and end of the piece table, we can simplify edge cases of changing the sequence at these positions.
+
+\noindent
+\\The add buffer grows dynamically with the amount of content it stores. Since it is append-only, undo and redo can be easily implemented by storing the first and last piece descriptors associated with a changed span of text (see \verb|undoRedoUtilities.c|) and the required pointers if and operation should be undone. Multiple operations can also be bundled together by pointing to the previous operation so that they are all undone at the same time (e.g. replace consisting of a deletion followed by an insertion). \\
+When searching for a specific text, the main challenge is to keep track of the line numbers because the GUI should directly jump to the result if one is found. Since the sequence is searched linearly in most use cases, we use a cache that stores the position and line number of the last result. While searching, the amount of line breaks after the position where the search should begin is also tracked. By accessing the cached last result, this allows the line number to be determined efficiently.
+
+\noindent
+\\In section 4, it can be seen that the described approach performs fairly well - even for large files and large piece tables.
 
 \begin{figure}[H]
-\caption{High level text data structure (sequence) illustration}
 \centering
 \includegraphics[width=0.8\textwidth]{./images/sequenceIllustration.png}
+\caption{High level text data structure (sequence) illustration}
 \label{fig:sequence}
 \end{figure}
 
