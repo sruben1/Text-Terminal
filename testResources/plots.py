@@ -1,7 +1,7 @@
 import csv
 import matplotlib.pyplot as plt
 
-runNumber = 1 # Choose the number of the run to plot
+runNumber = 2 # Choose the number of the run to plot
 
 # Plot 1: Different inserts and consequences for gui
 x = range(1, 1001, 10)
@@ -35,7 +35,6 @@ plt.savefig(f'profilerRuns/run{runNumber}/plot1.png')
 # Plot 4 showing insert times for all file sizes on log scale for subtle differences
 x = range(1, 1001, 10)
 
-# Read insert data for all file sizes
 file_sizes = ['smallFile', 'mediumFile', 'veryBigFile']
 insert_data = {}
 
@@ -58,7 +57,6 @@ for file_size in file_sizes:
 
 plt.figure()
 for file_size in file_sizes:
-    # Calculate average across the three optimization types
     insert_avg = []
     for i in range(len(x)):
         avg_value = (insert_data[file_size]['opt'][i] + insert_data[file_size]['nonopt'][i] + insert_data[file_size]['mixed'][i]) / 3
@@ -67,9 +65,10 @@ for file_size in file_sizes:
     plt.plot(x, insert_avg, marker='', label=f'{file_size}')
 
 plt.xlabel('Number of inserts')
-plt.ylabel('Runtime in seconds (log)')
+plt.ylabel('Runtime in seconds')
 plt.title('Insert Times Across File Sizes')
-plt.yscale('log') 
+plt.yscale('log')  # Log scale to show subtle differences
+#plt.gca().yaxis.set_minor_locator(plt.LogLocator(base=10, subs='all'))
 plt.legend()
 plt.tight_layout()
 plt.savefig(f'profilerRuns/run{runNumber}/plot4-insert_times.png')
