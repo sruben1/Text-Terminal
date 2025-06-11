@@ -2,11 +2,11 @@
 % Introduces relevant background knowledge to understand your work (e.g., existing algorithms,
 % protocols, software, and technologies).
 
-For the text structure we did some research and settled on implementing our own \textit{piece table} data structure inspired by C. Crowley's research paper \cite{crowley1998data}. \textit{Piece tables} are a good choice in our use case since they require almost no preprocessing (good for large files), allow for very efficient inserts and deletes even in large files and fit well with memory mapped files (which we implemented). More about \textit{piece tables} and our implementation in the next section \ref{sec:meto}. 
+After researching possible approaches for storing the text, we settled on implementing our own \textit{piece table} data structure inspired by C. Crowley's discussion of text editor data structures \cite{crowley1998data}. The general idea of \textit{piece tables} is to store a sequence of \textit{piece descriptors}, which point to contiguous text spans in a buffer. By using a separate \textit{file buffer} for the file content and an append-only \textit{add buffer} for new content, the complexity of editing text is essentially reduced to updating this sequence of piece descriptors. Thus, by using memory mapping for the \textit{file buffer}, the size of the data structure only grows with the number of edits rather than with the file size. This makes \textit{piece tables} an excellent choice for a text editor intended to handle large files.
 %GUI
 \par
 \smallskip
-The GUI uses ncursesw version 6 \cite{ncursesw}, it is the library that we chose to build our text-based UI because it has good terminal support. Specifically we chose the wide characters version of ncruses so that it can support Unicode and international character sets (standard ncurses only has ASCII support).
+For building the text-based user interface we use ncursesw version 6 \cite{ncursesw}, because it is a library that supports various terminals. We specifically chose the wide character version of ncurses to support Unicode and international character sets (standard ncurses only has ASCII support).
 \par
 \smallskip
-We also used xclip \cite{xclip} for our copy/paste functionality. It allows accessing the clipborad in X11, which is the Linux desktop environment. It bridges the terminal and GUI clipboard.
+We also use xclip \cite{xclip} for our copy and paste functionality, which allows accessing the clipboard of the X11 windowing system. Although X11 is increasingly being replaced by Wayland on Linux systems, we have found that xclip remains compatible with most Wayland environments thanks to XWayland compatibility.
