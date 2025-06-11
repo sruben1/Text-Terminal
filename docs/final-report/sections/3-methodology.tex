@@ -1,7 +1,7 @@
 \section{Methodology}\label{sec:meto}
 % Conceptual explanation of implementation, configuration, and setup. (May use code snippets and
 % screenshots to explain concepts, but not full code listings.)
-After deciding on our project topic we fixed our software requirements in more concrete form. Having done so we identified that it would be most beneficial to divide our future code into front end and backed with the main interface being between graphical user interface (GUI) and text data structure. The \verb|textStructure.h| header is the main interface connecting the GUI in \verb|main.c| and the actual text data structure implementation in \verb|textStructure.c| \cite{GithubRepo}. The other files are mostly built around these two central pieces of code. A more visual layout can be seen in \ref{fig:codeStruct}.
+After deciding on our project topic we fixed our software requirements in more concrete form. Having done so we identified that it would be most beneficial to divide our future code into front end and backed with the main interface being between graphical user interface (GUI) and text data structure. The \verb|textStructure.h| header is the main interface connecting the GUI in \verb|main.c| and the actual text data structure implementation in \verb|textStructure.c| \cite{GithubRepo}. The other files are mostly built around these two central pieces of code. A more visual layout can be seen in figure \ref{fig:codeStruct}.
 \begin{figure}[H]
 \caption{Project Code Structure}
 \noindent\begin{tikzpicture}[ 
@@ -53,6 +53,9 @@ After deciding on our project topic we fixed our software requirements in more c
 \label{fig:codeStruct}
 \end{figure}
 
+The text structure was implemented in a sequence structure with piece table (see figure \ref{fig:sequence}). The inserts and deletes are handling different cases allowing to change the displayed text content in all desired forms (split pieces, delete pieces and/or parts of them, ...). Any new inserted text gets written to an dynamically growing changes buffer, if a portion of text is then truncated or extended (deletes/inserts) we can remain very efficient since we simply update pointers in our pieces table to remove some part or add a new piece pointing to newly written content always at the current end of the add buffer. \\
+As we show in the next section \ref{sec:results}, in our context the choice of a linked list is still very well performative even when having a lot of nodes.
+
 \begin{figure}[H]
 \caption{High level text data structure (sequence) illustration}
 \centering
@@ -60,18 +63,18 @@ After deciding on our project topic we fixed our software requirements in more c
 \label{fig:sequence}
 \end{figure}
 
-\textbf{File management}(see \verb|fileManager.c| \cite{GithubRepo}) The way we load files into the editor is optimized even for very large files (we tested up to 5.5 GB text files). This partly because we directly map the file buffer of the sequence onto a mmap of the opened file. This directly leverages the speed and adavantage of the Linux mmap capabilites. Uppon save we also use mmaps to write, but we decided to still take the slight overhead of copying the original file to a temporary location in order to keep the sequece's peice table in it's current state and there for also the whole undo history alive. Otherwise it would need to be reset each time a save is done, which we found not very user friendly. %Last but not least we also added a bonus feature that makes a backup before saving to a file, in case the user accidentally overwrote content of the file, and wishes to recover to the state before that last save.
+\textbf{File management}(see \verb|fileManager.c| \cite{GithubRepo}) The way we load files into the editor is optimized even for very large files (we tested up to 5.5 GB text files). This is partly because we directly map the file buffer of the sequence onto a mmap of the opened file. This directly leverages the speed and advantage of the Linux mmap capabilities. Upon save we also use mmaps to write, but we decided to still take the slight overhead of copying the original file to a temporary location in order to keep the sequence's piece table in it's current state and there for also the whole undo history alive. Otherwise it would need to be reset each time a save is done, which we found not very user friendly. 
 
 %GUI
 \noindent
-\\\verb|print_items_after| is one of our most important parts and our method to that displays text in our terminal. Prints a certain number of lines starting from a chosen atomic position in our text sequence.
+\\On the front end side, \verb|print_items_after| is one of our most important parts and our method to that displays text in our terminal. Prints a certain number of lines starting from a chosen atomic position in our text sequence.
 Checks if sequence exists and line break standards. If good proceeds. It walks through blocks of text data and handles things liek UTF-8 character boundaries, skips control characters and detects line breaks or end-of-block to finish a text line.
 \\Changes current line segment to wide-character string for terminal compatibility.
 Output is the processed string that goes to the terminal at correct screen position.
 \\For efficiency it only prints lines that are actually visible on the terminal, so out of view lines don't get printed. For that we have a variable that has the absolute position of the line at the top of the screen (e.g. top line is actually the 5th line in the entire text).
 Also this is where the lineStats get update and if a line goes across multiple blocks the counters(atomicsInLine, nbrOfUtf8CharsNoControlCharsInLine) carry over to next block
 \\
-\\In \verb|guiUtilities| we have our line statistics like what is the current line number at the top of the screen or how many chars are in the specified line. The methods in here are used for things like scrolling, jumping to a specific line when using the search function or managing the line stats.
-Standouts are the converter from UTF-8 to wide characters and a way to translate cursor position to a position in our data structure.
+\\In \verb|guiUtilities| we have our line statistics like: what is the current line number at the top of the screen or how many chars are in the specified line. The methods in here are used for things like scrolling, jumping to a specific line when using the search function or managing the line stats.
+Characters are the converter from UTF-8 to wide characters and a way to translate cursor position to a position in our data structure.
 \\
-\\Our Cursor refreshs independent of our text. That means when our cursor moves position it doesn't cause the text to also be refreshed, that would be a big performance hit.
+\\Our Cursor refreshes independent of our text. That means when our cursor moves position it doesn't cause the text to also be refreshed, that would be a big performance hit.
